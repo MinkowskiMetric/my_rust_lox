@@ -10,4 +10,13 @@ pub enum Token {
     Plus,
     Semicolon,
     Star,
+    Bang,
+    BangEqual,
+    Equal,
+    EqualEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Slash,
 }
