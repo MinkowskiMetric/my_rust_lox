@@ -1,6 +1,34 @@
 use super::Token;
 use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged};
-use std::{fs, io::Read, iter::Peekable, str::Chars};
+use lazy_static::lazy_static;
+use maplit::hashmap;
+use std::{
+    collections::HashMap,
+    fs,
+    io::Read,
+    str::{Chars, FromStr},
+};
+
+lazy_static! {
+    static ref KEYWORDS: HashMap<&'static str, Token> = hashmap! {
+        "and" => Token::And,
+        "class" => Token::Class,
+        "else" => Token::Else,
+        "false" => Token::False,
+        "for" => Token::For,
+        "fun" => Token::Fun,
+        "if" => Token::If,
+        "nil" => Token::Nil,
+        "or" => Token::Or,
+        "print" => Token::Print,
+        "return" => Token::Return,
+        "super" => Token::Super,
+        "this" => Token::This,
+        "true" => Token::True,
+        "var" => Token::Var,
+        "while" => Token::While,
+    };
+}
 
 struct CharPeeper<'a> {
     chars: Chars<'a>,
@@ -113,6 +141,78 @@ impl<'a, 'b> TokenReader<'a, 'b> {
         }
     }
 
+    fn consume_string(&mut self) -> LoxResult<'b, PositionTagged<'b, Token>> {
+        let mut ret = String::new();
+
+        loop {
+            match self.advance() {
+                None => return Err(LoxError::UnexpectedEndOfFile(self.token_position())),
+                Some('"') => return self.emit_token(Token::String(ret)),
+
+                Some('\\') => match self.advance() {
+                    None => return Err(LoxError::UnexpectedEndOfFile(self.token_position())),
+                    Some('\\') => ret.push('\\'),
+                    Some('n') => ret.push('\n'),
+                    Some('t') => ret.push('\t'),
+                    Some('r') => ret.push('\r'),
+                    Some('0') => ret.push('\0'),
+                    Some('"') => ret.push('"'),
+                    Some(c) => {
+                        return Err(LoxError::UnknownEscapeSequence(c, self.token_position()))
+                    }
+                },
+
+                Some('\n') => {
+                    self.current_pos.new_line();
+                    ret.push('\n');
+                }
+                Some(c) => ret.push(c),
+            }
+        }
+    }
+
+    fn consume_identifier(&mut self, first_char: char) -> LoxResult<'b, PositionTagged<'b, Token>> {
+        let mut ret: String = first_char.into();
+
+        loop {
+            match self.peek1() {
+                Some(next_char @ ('_' | 'a'..='z' | 'A'..='Z' | '0'..='9')) => {
+                    self.advance();
+                    ret.push(next_char)
+                }
+
+                _ => return self.emit_identifier(ret),
+            }
+        }
+    }
+
+    fn consume_number(&mut self, first_digit: char) -> LoxResult<'b, PositionTagged<'b, Token>> {
+        let mut num_str: String = first_digit.into();
+
+        loop {
+            match self.peek1() {
+                Some(next_digit @ ('.' | '0'..='9')) => {
+                    self.advance();
+                    num_str.push(next_digit);
+                }
+
+                _ => {
+                    return match f64::from_str(&num_str) {
+                        Ok(num) => self.emit_token(Token::Number(num)),
+                        Err(e) => Err(LoxError::InvalidNumber(e, self.token_position())),
+                    };
+                }
+            }
+        }
+    }
+
+    fn emit_identifier(&self, identifier: String) -> LoxResult<'b, PositionTagged<'b, Token>> {
+        match KEYWORDS.get(&*identifier).cloned() {
+            Some(token) => self.emit_token(token),
+            None => self.emit_token(Token::Identifier(identifier)),
+        }
+    }
+
     fn emit_token(&self, token: Token) -> LoxResult<'b, PositionTagged<'b, Token>> {
         Ok(PositionTagged::new(token, self.token_position()))
     }
@@ -155,6 +255,13 @@ impl<'a, 'b> Iterator for TokenReader<'a, 'b> {
             Some('>') if self.match_advance('=') => Some(self.emit_token(Token::GreaterEqual)),
             Some('>') => Some(self.emit_token(Token::Greater)),
 
+            Some('"') => Some(self.consume_string()),
+
+            Some(first_char @ ('_' | 'a'..='z' | 'A'..='Z')) => {
+                Some(self.consume_identifier(first_char))
+            }
+            Some(first_digit @ '0'..='9') => Some(self.consume_number(first_digit)),
+
             Some(c) => Some(Err(LoxError::InvalidCharacter(c, self.token_position()))),
         }
     }
@@ -196,12 +303,12 @@ mod test {
 
     fn assert_token_match(
         result: &PositionTagged<'_, Token>,
-        token: Token,
+        token: &Token,
         file_name: &str,
         start_pos: FilePos,
         end_pos: Option<FilePos>,
     ) {
-        assert_eq!(*result.value(), token);
+        assert_eq!(*result.value(), *token);
         assert_eq!(result.position().file_name(), file_name);
         assert_eq!(*result.position().start(), start_pos);
         assert_eq!(*result.position().end(), end_pos);
@@ -265,7 +372,7 @@ mod test {
         for idx in 0..tokens.len() {
             assert_token_match(
                 &tokens[idx],
-                expected[idx].token,
+                &expected[idx].token,
                 "filename",
                 FilePos::new(0, expected[idx].start_col),
                 Some(FilePos::new(0, expected[idx].end_col)),
@@ -302,7 +409,7 @@ mod test {
         assert_single_error("#", '#', 0, 1);
 
         assert_tokens(
-            "\t( )!=!!>>=<<====/",
+            "\t( )!=!!>>=<<====/\"hello, world\"chimp012+",
             &[
                 SimpleTokenMatch::new(Token::LeftParen, 1, 2),
                 SimpleTokenMatch::new(Token::RightParen, 3, 4),
@@ -316,12 +423,27 @@ mod test {
                 SimpleTokenMatch::new(Token::EqualEqual, 14, 16),
                 SimpleTokenMatch::new(Token::Equal, 16, 17),
                 SimpleTokenMatch::new(Token::Slash, 17, 18),
+                SimpleTokenMatch::new(Token::String("hello, world".into()), 18, 32),
+                SimpleTokenMatch::new(Token::Identifier("chimp012".into()), 32, 40),
+                SimpleTokenMatch::new(Token::Plus, 40, 41),
             ],
         );
 
+        assert_single_token("0", Token::Number(0.0), 0, 1);
+        assert_single_token("0.", Token::Number(0.0), 0, 2);
+        assert_single_token("0.1234", Token::Number(0.1234), 0, 6);
+        assert_single_token("12.34", Token::Number(12.34), 0, 5);
+
+        assert_token_match(
+            &tokenize("\n\n\"one\n\ntwo\"", "boo", 0).expect("failed to parse")[0],
+            &Token::String("one\n\ntwo".into()),
+            "boo",
+            FilePos::new(2, 0),
+            Some(FilePos::new(4, 4)),
+        );
         assert_token_match(
             &tokenize("\n\n(", "boo", 0).expect("failed to parse")[0],
-            Token::LeftParen,
+            &Token::LeftParen,
             "boo",
             FilePos::new(2, 0),
             Some(FilePos::new(2, 1)),
@@ -329,7 +451,7 @@ mod test {
         assert_token_match(
             &tokenize("\n  // hello world\n(\n// not to end of line", "boo", 0)
                 .expect("failed to parse")[0],
-            Token::LeftParen,
+            &Token::LeftParen,
             "boo",
             FilePos::new(2, 0),
             Some(FilePos::new(2, 1)),

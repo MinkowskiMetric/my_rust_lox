@@ -5,6 +5,9 @@ use std::io;
 pub enum LoxError<'a> {
     InvalidCharacter(char, Position<'a>),
     TokenizationError(Vec<LoxError<'a>>),
+    UnexpectedEndOfFile(Position<'a>),
+    UnknownEscapeSequence(char, Position<'a>),
+    InvalidNumber(std::num::ParseFloatError, Position<'a>),
     IoError(io::Error),
 }
 

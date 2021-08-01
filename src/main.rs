@@ -13,7 +13,7 @@ fn main() -> Result<()> {
     println!("Input files: {:?}", settings);
 
     println!(
-        "Tokens: {:?}",
+        "Tokens: {:#?}",
         lexer::tokenize_file(&settings.input_files[0])
     );
     todo!()

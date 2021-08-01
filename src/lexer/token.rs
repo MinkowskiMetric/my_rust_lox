@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     LeftParen,
     RightParen,
@@ -19,4 +19,23 @@ pub enum Token {
     Greater,
     GreaterEqual,
     Slash,
+    String(String),
+    Identifier(String),
+    Number(f64),
+    And,
+    Class,
+    Else,
+    False,
+    For,
+    Fun,
+    If,
+    Nil,
+    Or,
+    Print,
+    Return,
+    Super,
+    This,
+    True,
+    Var,
+    While,
 }

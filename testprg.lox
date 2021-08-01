@@ -1,5 +1,5 @@
 fun main() {
-    print "hello";
+    print "the answer is " + 42.0;
 }
 
 main();

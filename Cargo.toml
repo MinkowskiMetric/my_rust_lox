@@ -6,6 +6,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-"anyhow" = "1"
-"clap" = "2"
+"anyhow" = "1.0"
+"clap" = "2.0"
+"lazy_static" = "1.4"
+"maplit" = "1.0"
 "utf-8" = "0.7"
