@@ -1,5 +1,5 @@
-use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged, tag_position};
-use std::{fmt, fs, iter::Peekable, io::{self, Read}, path::Path, str::Chars};
+use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged};
+use std::{fs, iter::Peekable, io::Read, str::Chars};
 use super::Token;
 
 struct TokenReader<'a, 'b> {
@@ -19,6 +19,9 @@ impl<'a, 'b> TokenReader<'a, 'b> {
         }
     }
 
+    fn peek(&mut self) -> Option<char> {
+        self.code.peek().cloned()
+    }
     fn advance(&mut self) -> Option<char> {
         match self.code.next() {
             None => None,
@@ -30,11 +33,26 @@ impl<'a, 'b> TokenReader<'a, 'b> {
     }
 
     fn match_advance(&mut self, c: char) -> bool {
-        if self.code.peek().cloned() == Some(c) {
+        if self.peek() == Some(c) {
             self.advance();
             true
         } else {
             false
+        }
+    }
+
+    fn skip_whitespace(&mut self) {
+        loop {
+            match self.peek() {
+                Some(' ' | '\r' | '\t') => {
+                    self.advance();
+                },
+                Some('\n') => {
+                    self.advance();
+                    self.current_pos.new_line();
+                },
+                _ => break,
+            };
         }
     }
 
@@ -51,11 +69,21 @@ impl<'a, 'b> Iterator for TokenReader<'a, 'b> {
     type Item = LoxResult<'b, PositionTagged<'b, Token>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        self.skip_whitespace();
         self.start_pos = self.current_pos;
 
         match self.advance() {
             None => None,
             Some('(') => Some(self.emit_token(Token::LeftParen)),
+            Some(')') => Some(self.emit_token(Token::RightParen)),
+            Some('{') => Some(self.emit_token(Token::LeftBrace)),
+            Some('}') => Some(self.emit_token(Token::RightBrace)),
+            Some(',') => Some(self.emit_token(Token::Comma)),
+            Some('.') => Some(self.emit_token(Token::Dot)),
+            Some('-') => Some(self.emit_token(Token::Minus)),
+            Some('+') => Some(self.emit_token(Token::Plus)),
+            Some(';') => Some(self.emit_token(Token::Semicolon)),
+            Some('*') => Some(self.emit_token(Token::Star)),
 
             Some(c) => Some(Err(LoxError::InvalidCharacter(c, self.token_position())))
         }
@@ -166,5 +194,12 @@ mod test {
     fn test_single_token() {
         assert_single_token("(", Token::LeftParen, 0, 1);
         assert_single_error("#", '#', 0, 1);
+
+        assert_tokens("\t( )", &[
+            SimpleTokenMatch::new(Token::LeftParen, 1, 2),
+            SimpleTokenMatch::new(Token::RightParen, 3, 4),
+        ]);
+
+        assert_token_match(&tokenize("\n\n(", "boo", 0).expect("failed to parse")[0], Token::LeftParen, "boo", FilePos::new(2, 0), Some(FilePos::new(2, 1)));
     }
 }
