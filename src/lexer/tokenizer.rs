@@ -1,6 +1,6 @@
-use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged};
-use std::{fs, iter::Peekable, io::Read, str::Chars};
 use super::Token;
+use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged};
+use std::{fs, io::Read, iter::Peekable, str::Chars};
 
 struct CharPeeper<'a> {
     chars: Chars<'a>,
@@ -14,9 +14,13 @@ impl<'a> CharPeeper<'a> {
         let peek1 = chars.next();
         let peek2 = chars.next();
 
-        Self { chars, peek1, peek2 }
+        Self {
+            chars,
+            peek1,
+            peek2,
+        }
     }
-    
+
     fn next(&mut self) -> Option<char> {
         if let Some(c) = self.peek1.take() {
             self.peek1 = self.peek2;
@@ -85,11 +89,11 @@ impl<'a, 'b> TokenReader<'a, 'b> {
             match self.peek1() {
                 Some(' ' | '\r' | '\t') => {
                     self.advance();
-                },
+                }
                 Some('\n') => {
                     self.advance();
                     self.current_pos.new_line();
-                },
+                }
                 Some('/') if self.peek2() == Some('/') => self.advance_to_end_of_line(),
                 _ => break,
             };
@@ -102,7 +106,7 @@ impl<'a, 'b> TokenReader<'a, 'b> {
                 Some('\n') => {
                     self.current_pos.new_line();
                     break;
-                },
+                }
                 None => break,
                 _ => (),
             }
@@ -140,7 +144,7 @@ impl<'a, 'b> Iterator for TokenReader<'a, 'b> {
             Some(';') => Some(self.emit_token(Token::Semicolon)),
             Some('*') => Some(self.emit_token(Token::Star)),
             Some('/') => Some(self.emit_token(Token::Slash)),
-            
+
             // One or two character tokens
             Some('!') if self.match_advance('=') => Some(self.emit_token(Token::BangEqual)),
             Some('!') => Some(self.emit_token(Token::Bang)),
@@ -151,12 +155,16 @@ impl<'a, 'b> Iterator for TokenReader<'a, 'b> {
             Some('>') if self.match_advance('=') => Some(self.emit_token(Token::GreaterEqual)),
             Some('>') => Some(self.emit_token(Token::Greater)),
 
-            Some(c) => Some(Err(LoxError::InvalidCharacter(c, self.token_position())))
+            Some(c) => Some(Err(LoxError::InvalidCharacter(c, self.token_position()))),
         }
     }
 }
 
-pub fn tokenize<'a, 'b>(code: &'a str, file_name: &'b str, line: u32) -> LoxResult<'b, Vec<PositionTagged<'b, Token>>> {
+pub fn tokenize<'a, 'b>(
+    code: &'a str,
+    file_name: &'b str,
+    line: u32,
+) -> LoxResult<'b, Vec<PositionTagged<'b, Token>>> {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
     for result in TokenReader::new(code, file_name, line) {
@@ -165,7 +173,7 @@ pub fn tokenize<'a, 'b>(code: &'a str, file_name: &'b str, line: u32) -> LoxResu
             Err(err) => errors.push(err),
         }
     }
-    
+
     if errors.is_empty() {
         Ok(tokens)
     } else {
@@ -175,7 +183,7 @@ pub fn tokenize<'a, 'b>(code: &'a str, file_name: &'b str, line: u32) -> LoxResu
 
 pub fn tokenize_file<'a>(path: &'a str) -> LoxResult<'a, Vec<PositionTagged<'a, Token>>> {
     let mut file = fs::File::open(path)?;
-    
+
     let mut code = String::new();
     file.read_to_string(&mut code)?;
 
@@ -186,21 +194,33 @@ pub fn tokenize_file<'a>(path: &'a str) -> LoxResult<'a, Vec<PositionTagged<'a, 
 mod test {
     use super::*;
 
-    fn assert_token_match(result: &PositionTagged<'_, Token>, token: Token, file_name: &str, start_pos: FilePos, end_pos: Option<FilePos>) {
+    fn assert_token_match(
+        result: &PositionTagged<'_, Token>,
+        token: Token,
+        file_name: &str,
+        start_pos: FilePos,
+        end_pos: Option<FilePos>,
+    ) {
         assert_eq!(*result.value(), token);
         assert_eq!(result.position().file_name(), file_name);
         assert_eq!(*result.position().start(), start_pos);
         assert_eq!(*result.position().end(), end_pos);
     }
 
-    fn assert_error_match(error: &LoxError<'_>, expected: char, file_name: &str, start_pos: FilePos, end_pos: Option<FilePos>) {
+    fn assert_error_match(
+        error: &LoxError<'_>,
+        expected: char,
+        file_name: &str,
+        start_pos: FilePos,
+        end_pos: Option<FilePos>,
+    ) {
         match error {
             LoxError::InvalidCharacter(ch, pos) => {
                 assert_eq!(*ch, expected);
                 assert_eq!(pos.file_name(), file_name);
                 assert_eq!(*pos.start(), start_pos);
                 assert_eq!(*pos.end(), end_pos);
-            },
+            }
 
             _ => panic!("Unexpected LoxError {:?}", error),
         }
@@ -214,7 +234,11 @@ mod test {
 
     impl SimpleTokenMatch {
         fn new(token: Token, start_col: u32, end_col: u32) -> Self {
-            Self { token, start_col, end_col }
+            Self {
+                token,
+                start_col,
+                end_col,
+            }
         }
     }
 
@@ -226,7 +250,11 @@ mod test {
 
     impl SimpleErrorMatch {
         fn new(ch: char, start_col: u32, end_col: u32) -> Self {
-            Self { ch, start_col, end_col }
+            Self {
+                ch,
+                start_col,
+                end_col,
+            }
         }
     }
 
@@ -235,7 +263,13 @@ mod test {
 
         assert_eq!(tokens.len(), expected.len());
         for idx in 0..tokens.len() {
-            assert_token_match(&tokens[idx], expected[idx].token, "filename", FilePos::new(0, expected[idx].start_col), Some(FilePos::new(0, expected[idx].end_col)));
+            assert_token_match(
+                &tokens[idx],
+                expected[idx].token,
+                "filename",
+                FilePos::new(0, expected[idx].start_col),
+                Some(FilePos::new(0, expected[idx].end_col)),
+            );
         }
     }
 
@@ -243,7 +277,13 @@ mod test {
         if let Err(LoxError::TokenizationError(errors)) = tokenize(tokens, "filename", 0) {
             assert_eq!(errors.len(), expected.len());
             for idx in 0..errors.len() {
-                assert_error_match(&errors[idx], expected[idx].ch, "filename", FilePos::new(0, expected[idx].start_col), Some(FilePos::new(0, expected[idx].end_col)));
+                assert_error_match(
+                    &errors[idx],
+                    expected[idx].ch,
+                    "filename",
+                    FilePos::new(0, expected[idx].start_col),
+                    Some(FilePos::new(0, expected[idx].end_col)),
+                );
             }
         }
     }
@@ -261,22 +301,38 @@ mod test {
         assert_single_token("(", Token::LeftParen, 0, 1);
         assert_single_error("#", '#', 0, 1);
 
-        assert_tokens("\t( )!=!!>>=<<====/", &[
-            SimpleTokenMatch::new(Token::LeftParen, 1, 2),
-            SimpleTokenMatch::new(Token::RightParen, 3, 4),
-            SimpleTokenMatch::new(Token::BangEqual, 4, 6),
-            SimpleTokenMatch::new(Token::Bang, 6, 7),
-            SimpleTokenMatch::new(Token::Bang, 7, 8),
-            SimpleTokenMatch::new(Token::Greater, 8, 9),
-            SimpleTokenMatch::new(Token::GreaterEqual, 9, 11),
-            SimpleTokenMatch::new(Token::Less, 11, 12),
-            SimpleTokenMatch::new(Token::LessEqual, 12, 14),
-            SimpleTokenMatch::new(Token::EqualEqual, 14, 16),
-            SimpleTokenMatch::new(Token::Equal, 16, 17),
-            SimpleTokenMatch::new(Token::Slash, 17, 18),
-        ]);
+        assert_tokens(
+            "\t( )!=!!>>=<<====/",
+            &[
+                SimpleTokenMatch::new(Token::LeftParen, 1, 2),
+                SimpleTokenMatch::new(Token::RightParen, 3, 4),
+                SimpleTokenMatch::new(Token::BangEqual, 4, 6),
+                SimpleTokenMatch::new(Token::Bang, 6, 7),
+                SimpleTokenMatch::new(Token::Bang, 7, 8),
+                SimpleTokenMatch::new(Token::Greater, 8, 9),
+                SimpleTokenMatch::new(Token::GreaterEqual, 9, 11),
+                SimpleTokenMatch::new(Token::Less, 11, 12),
+                SimpleTokenMatch::new(Token::LessEqual, 12, 14),
+                SimpleTokenMatch::new(Token::EqualEqual, 14, 16),
+                SimpleTokenMatch::new(Token::Equal, 16, 17),
+                SimpleTokenMatch::new(Token::Slash, 17, 18),
+            ],
+        );
 
-        assert_token_match(&tokenize("\n\n(", "boo", 0).expect("failed to parse")[0], Token::LeftParen, "boo", FilePos::new(2, 0), Some(FilePos::new(2, 1)));
-        assert_token_match(&tokenize("\n  // hello world\n(\n// not to end of line", "boo", 0).expect("failed to parse")[0], Token::LeftParen, "boo", FilePos::new(2, 0), Some(FilePos::new(2, 1)));
+        assert_token_match(
+            &tokenize("\n\n(", "boo", 0).expect("failed to parse")[0],
+            Token::LeftParen,
+            "boo",
+            FilePos::new(2, 0),
+            Some(FilePos::new(2, 1)),
+        );
+        assert_token_match(
+            &tokenize("\n  // hello world\n(\n// not to end of line", "boo", 0)
+                .expect("failed to parse")[0],
+            Token::LeftParen,
+            "boo",
+            FilePos::new(2, 0),
+            Some(FilePos::new(2, 1)),
+        );
     }
 }

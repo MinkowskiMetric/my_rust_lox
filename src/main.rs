@@ -6,7 +6,7 @@ mod position;
 mod settings;
 
 pub use error::{LoxError, LoxResult};
-pub use position::{FilePos, Position, PositionTagged, tag_position};
+pub use position::{tag_position, FilePos, Position, PositionTagged};
 
 fn main() -> Result<()> {
     let settings = settings::Settings::parse_cmd_line()?;

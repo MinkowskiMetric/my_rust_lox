@@ -1,5 +1,5 @@
-use std::io;
 use crate::Position;
+use std::io;
 
 #[derive(Debug)]
 pub enum LoxError<'a> {
