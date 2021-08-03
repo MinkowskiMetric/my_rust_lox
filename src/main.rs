@@ -8,6 +8,7 @@ mod settings;
 
 pub use error::{LoxError, LoxResult};
 pub use lexer::{tokenize, tokenize_file, Token};
+pub use parser::{parse, Parser};
 pub use position::{tag_position, FilePos, Position, PositionTagged};
 
 fn print_error(error: LoxError<'_>) {
@@ -21,15 +22,20 @@ fn run_interactive() {
             break;
         }
 
-        println!("{:#?}", tokenize(&line, "interactive", 1));
+        match tokenize(&line, "interactive", 1) {
+            Ok(tokens) => {
+                println!("{:#?}", tokens);
+
+                parse(tokens);
+            },
+
+            Err(err) => print_error(err),
+        }
     }
 }
 
 fn run_file(input_file: &str) -> LoxResult<'_, ()> {
-    println!(
-        "Tokens: {:#?}",
-        lexer::tokenize_file(input_file)?
-    );
+    println!("Tokens: {:#?}", lexer::tokenize_file(input_file)?);
 
     Ok(())
 }
@@ -43,6 +49,4 @@ fn main() {
             print_error(err);
         }
     };
-
-
 }

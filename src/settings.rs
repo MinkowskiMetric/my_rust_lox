@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::{App, Arg};
 
 #[derive(Debug)]
@@ -33,7 +32,10 @@ impl Settings {
             .get_matches_from(args);
 
         Self {
-            input_file: matches.value_of("input").map(String::from).unwrap_or_else(String::new),
+            input_file: matches
+                .value_of("input")
+                .map(String::from)
+                .unwrap_or_else(String::new),
             interactive: matches.is_present("interactive"),
         }
     }
