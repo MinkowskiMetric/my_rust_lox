@@ -3,29 +3,38 @@ use clap::{App, Arg};
 
 #[derive(Debug)]
 pub struct Settings {
-    pub input_files: Vec<String>,
+    pub input_file: String,
+    pub interactive: bool,
 }
 
 impl Settings {
-    pub fn parse_cmd_line() -> Result<Self> {
+    pub fn parse_cmd_line() -> Self {
         Self::parse(std::env::args())
     }
 
-    pub fn parse(args: impl Iterator<Item = String>) -> Result<Self> {
+    pub fn parse(args: impl Iterator<Item = String>) -> Self {
         let matches = App::new("Rox")
             .version("1.0")
             .about("Rox interpreter")
-            .arg(Arg::from_usage(
-                "<INPUT>              'Sets the input file to use'",
-            ))
-            .get_matches_from_safe(args)?;
+            .arg(
+                Arg::with_name("input")
+                    .index(1)
+                    .takes_value(true)
+                    .required_unless("interactive")
+                    .help("Input files"),
+            )
+            .arg(
+                Arg::with_name("interactive")
+                    .short("i")
+                    .long("interactive")
+                    .help("Interactive mode")
+                    .conflicts_with("input"),
+            )
+            .get_matches_from(args);
 
-        Ok(Self {
-            input_files: matches
-                .values_of("INPUT")
-                .unwrap()
-                .map(|s| s.to_string())
-                .collect(),
-        })
+        Self {
+            input_file: matches.value_of("input").map(String::from).unwrap_or_else(String::new),
+            interactive: matches.is_present("interactive"),
+        }
     }
 }

@@ -31,6 +31,12 @@ impl FilePos {
     }
 }
 
+impl fmt::Display for FilePos {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}:{}", self.line, self.column)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Position<'a> {
     file_name: &'a str,
@@ -55,6 +61,15 @@ impl<'a> Position<'a> {
     }
     pub fn end(&self) -> &Option<FilePos> {
         &self.end
+    }
+}
+
+impl fmt::Display for Position<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self.end {
+            Some(end) => write!(f, "{} ({}:{})", self.file_name, self.start, end),
+            None => write!(f, "{} ({})", self.file_name, self.start),
+        }
     }
 }
 
