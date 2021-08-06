@@ -1,4 +1,5 @@
 use core::fmt;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FilePos {
@@ -37,15 +38,15 @@ impl fmt::Display for FilePos {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Position<'a> {
-    file_name: &'a str,
+#[derive(Debug, Clone)]
+pub struct Position {
+    file_name: Rc<String>,
     start: FilePos,
     end: Option<FilePos>,
 }
 
-impl<'a> Position<'a> {
-    pub fn new(file_name: &'a str, start: FilePos, end: Option<FilePos>) -> Self {
+impl Position {
+    pub fn new(file_name: Rc<String>, start: FilePos, end: Option<FilePos>) -> Self {
         Self {
             file_name,
             start,
@@ -53,8 +54,8 @@ impl<'a> Position<'a> {
         }
     }
 
-    pub fn file_name(&self) -> &'a str {
-        self.file_name
+    pub fn file_name(&self) -> &Rc<String> {
+        &self.file_name
     }
     pub fn start(&self) -> &FilePos {
         &self.start
@@ -64,7 +65,7 @@ impl<'a> Position<'a> {
     }
 }
 
-impl fmt::Display for Position<'_> {
+impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self.end {
             Some(end) => write!(f, "{} ({}:{})", self.file_name, self.start, end),
@@ -73,23 +74,57 @@ impl fmt::Display for Position<'_> {
     }
 }
 
-pub struct PositionTagged<'a, T>(T, Position<'a>);
+pub struct PositionTagged<T>(T, Position);
 
-impl<'a, T> PositionTagged<'a, T> {
-    pub fn new(value: T, position: Position<'a>) -> Self {
+impl<T> PositionTagged<T> {
+    pub fn new(value: T, position: Position) -> Self {
         Self(value, position)
+    }
+
+    pub fn new_from_to(value: T, from: Position, to: Position) -> Self {
+        Self(
+            value,
+            Position::new(
+                from.file_name().clone(),
+                from.start().clone(),
+                to.end().clone(),
+            ),
+        )
     }
 
     pub fn value(&self) -> &T {
         &self.0
     }
 
-    pub fn position(&self) -> &Position<'a> {
+    pub fn position(&self) -> &Position {
         &self.1
+    }
+
+    pub fn take(self) -> (T, Position) {
+        (self.0, self.1)
+    }
+
+    pub fn split(&self) -> (&T, &Position) {
+        (&self.0, &self.1)
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for PositionTagged<'_, T> {
+impl<T: Clone> Clone for PositionTagged<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone())
+    }
+}
+
+impl<T> From<T> for PositionTagged<T> {
+    fn from(t: T) -> Self {
+        Self::new(
+            t,
+            Position::new(Rc::new(String::new()), FilePos::new(0, 0), None),
+        )
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for PositionTagged<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.debug_tuple("PositionTagged")
             .field(&self.0)
@@ -98,12 +133,12 @@ impl<T: fmt::Debug> fmt::Debug for PositionTagged<'_, T> {
     }
 }
 
-pub fn tag_position<'a, T>(
+pub fn tag_position<T>(
     t: T,
-    file_name: &'a str,
+    file_name: Rc<String>,
     start: FilePos,
     end: Option<FilePos>,
-) -> PositionTagged<'a, T> {
+) -> PositionTagged<T> {
     PositionTagged(
         t,
         Position {

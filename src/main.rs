@@ -11,30 +11,38 @@ pub use lexer::{tokenize, tokenize_file, Token};
 pub use parser::{parse, Parser};
 pub use position::{tag_position, FilePos, Position, PositionTagged};
 
-fn print_error(error: LoxError<'_>) {
+fn print_error(error: LoxError) {
     println!("Error: {}", error);
 }
 
 fn run_interactive() {
     loop {
-        let mut line = String::new();
-        if io::stdin().read_line(&mut line).is_err() {
-            break;
-        }
+        let mut parse_data = String::new();
+        loop {
+            let mut line = String::new();
+            if io::stdin().read_line(&mut line).is_err() {
+                break;
+            }
 
-        match tokenize(&line, "interactive", 1) {
-            Ok(tokens) => {
-                println!("{:#?}", tokens);
+            parse_data.push_str(&line);
 
-                parse(tokens);
-            },
+            match tokenize(&parse_data, "interactive", 1).and_then(|tokens| parse(tokens)) {
+                Ok(expr) => {
+                    println!("{}", expr.value());
+                    break;
+                }
 
-            Err(err) => print_error(err),
+                Err(LoxError::IncompleteExpression(_)) => continue, // Get the next line
+                Err(err) => {
+                    print_error(err);
+                    break;
+                }
+            }
         }
     }
 }
 
-fn run_file(input_file: &str) -> LoxResult<'_, ()> {
+fn run_file(input_file: &str) -> LoxResult<()> {
     println!("Tokens: {:#?}", lexer::tokenize_file(input_file)?);
 
     Ok(())

@@ -6,6 +6,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Read,
+    rc::Rc,
     str::{Chars, FromStr},
 };
 
@@ -68,20 +69,22 @@ impl<'a> CharPeeper<'a> {
     }
 }
 
-struct TokenReader<'a, 'b> {
+struct TokenReader<'a> {
     code: CharPeeper<'a>,
-    file_name: &'b str,
+    file_name: Rc<String>,
     start_pos: FilePos,
     current_pos: FilePos,
+    file_ended: bool,
 }
 
-impl<'a, 'b> TokenReader<'a, 'b> {
-    fn new(code: &'a str, file_name: &'b str, line: u32) -> Self {
+impl<'a> TokenReader<'a> {
+    fn new(code: &'a str, file_name: Rc<String>, line: u32) -> Self {
         Self {
             code: CharPeeper::new(code),
             file_name,
             start_pos: FilePos::new(line, 0),
             current_pos: FilePos::new(line, 0),
+            file_ended: false,
         }
     }
 
@@ -141,7 +144,7 @@ impl<'a, 'b> TokenReader<'a, 'b> {
         }
     }
 
-    fn consume_string(&mut self) -> LoxResult<'b, PositionTagged<'b, Token>> {
+    fn consume_string(&mut self) -> LoxResult<PositionTagged<Token>> {
         let mut ret = String::new();
 
         loop {
@@ -171,7 +174,7 @@ impl<'a, 'b> TokenReader<'a, 'b> {
         }
     }
 
-    fn consume_identifier(&mut self, first_char: char) -> LoxResult<'b, PositionTagged<'b, Token>> {
+    fn consume_identifier(&mut self, first_char: char) -> LoxResult<PositionTagged<Token>> {
         let mut ret: String = first_char.into();
 
         loop {
@@ -186,7 +189,7 @@ impl<'a, 'b> TokenReader<'a, 'b> {
         }
     }
 
-    fn consume_number(&mut self, first_digit: char) -> LoxResult<'b, PositionTagged<'b, Token>> {
+    fn consume_number(&mut self, first_digit: char) -> LoxResult<PositionTagged<Token>> {
         let mut num_str: String = first_digit.into();
 
         loop {
@@ -206,31 +209,42 @@ impl<'a, 'b> TokenReader<'a, 'b> {
         }
     }
 
-    fn emit_identifier(&self, identifier: String) -> LoxResult<'b, PositionTagged<'b, Token>> {
+    fn emit_identifier(&self, identifier: String) -> LoxResult<PositionTagged<Token>> {
         match KEYWORDS.get(&*identifier).cloned() {
             Some(token) => self.emit_token(token),
             None => self.emit_token(Token::Identifier(identifier)),
         }
     }
 
-    fn emit_token(&self, token: Token) -> LoxResult<'b, PositionTagged<'b, Token>> {
+    fn emit_token(&self, token: Token) -> LoxResult<PositionTagged<Token>> {
         Ok(PositionTagged::new(token, self.token_position()))
     }
 
-    fn token_position(&self) -> Position<'b> {
-        Position::new(self.file_name, self.start_pos, Some(self.current_pos))
+    fn token_position(&self) -> Position {
+        Position::new(
+            self.file_name.clone(),
+            self.start_pos,
+            Some(self.current_pos),
+        )
     }
 }
 
-impl<'a, 'b> Iterator for TokenReader<'a, 'b> {
-    type Item = LoxResult<'b, PositionTagged<'b, Token>>;
+impl<'a> Iterator for TokenReader<'a> {
+    type Item = LoxResult<PositionTagged<Token>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
         self.start_pos = self.current_pos;
 
         match self.advance() {
-            None => None,
+            None => {
+                if !self.file_ended {
+                    self.file_ended = true;
+                    Some(self.emit_token(Token::EndOfFile))
+                } else {
+                    None
+                }
+            }
 
             // Single characters are simple
             Some('(') => Some(self.emit_token(Token::LeftParen)),
@@ -271,10 +285,10 @@ pub fn tokenize<'a, 'b>(
     code: &'a str,
     file_name: &'b str,
     line: u32,
-) -> LoxResult<'b, Vec<PositionTagged<'b, Token>>> {
+) -> LoxResult<Vec<PositionTagged<Token>>> {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
-    for result in TokenReader::new(code, file_name, line) {
+    for result in TokenReader::new(code, Rc::new(file_name.into()), line) {
         match result {
             Ok(token) => tokens.push(token),
             Err(err) => errors.push(err),
@@ -288,7 +302,7 @@ pub fn tokenize<'a, 'b>(
     }
 }
 
-pub fn tokenize_file<'a>(path: &'a str) -> LoxResult<'a, Vec<PositionTagged<'a, Token>>> {
+pub fn tokenize_file(path: &str) -> LoxResult<Vec<PositionTagged<Token>>> {
     let mut file = fs::File::open(path)?;
 
     let mut code = String::new();
@@ -302,20 +316,20 @@ mod test {
     use super::*;
 
     fn assert_token_match(
-        result: &PositionTagged<'_, Token>,
+        result: &PositionTagged<Token>,
         token: &Token,
         file_name: &str,
         start_pos: FilePos,
         end_pos: Option<FilePos>,
     ) {
         assert_eq!(*result.value(), *token);
-        assert_eq!(result.position().file_name(), file_name);
+        assert_eq!(result.position().file_name().as_ref(), file_name);
         assert_eq!(*result.position().start(), start_pos);
         assert_eq!(*result.position().end(), end_pos);
     }
 
     fn assert_error_match(
-        error: &LoxError<'_>,
+        error: &LoxError,
         expected: char,
         file_name: &str,
         start_pos: FilePos,
@@ -324,7 +338,7 @@ mod test {
         match error {
             LoxError::InvalidCharacter(ch, pos) => {
                 assert_eq!(*ch, expected);
-                assert_eq!(pos.file_name(), file_name);
+                assert_eq!(pos.file_name().as_ref(), file_name);
                 assert_eq!(*pos.start(), start_pos);
                 assert_eq!(*pos.end(), end_pos);
             }
@@ -368,8 +382,8 @@ mod test {
     fn assert_tokens(tokens: &str, expected: &[SimpleTokenMatch]) {
         let tokens = tokenize(tokens, "filename", 0).expect("Failed to match tokens");
 
-        assert_eq!(tokens.len(), expected.len());
-        for idx in 0..tokens.len() {
+        assert_eq!(tokens.len(), expected.len() + 1);
+        for idx in 0..expected.len() {
             assert_token_match(
                 &tokens[idx],
                 &expected[idx].token,
@@ -378,6 +392,8 @@ mod test {
                 Some(FilePos::new(0, expected[idx].end_col)),
             );
         }
+
+        assert_eq!(*tokens[expected.len()].value(), Token::EndOfFile);
     }
 
     fn assert_errors(tokens: &str, expected: &[SimpleErrorMatch]) {
