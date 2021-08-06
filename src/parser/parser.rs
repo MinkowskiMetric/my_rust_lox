@@ -1,5 +1,5 @@
 use super::Expression;
-use crate::{LoxError, LoxResult, PositionTagged, Token};
+use crate::{LoxError, LoxResult, Position, PositionTagged, Token};
 use std::iter::Peekable;
 
 pub struct Parser<Iter: Iterator<Item = PositionTagged<Token>>> {
@@ -22,6 +22,52 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
     }
 
     fn expression(&mut self) -> LoxResult<PositionTagged<Expression>> {
+        self.equality()
+    }
+
+    fn equality(&mut self) -> LoxResult<PositionTagged<Expression>> {
+        let mut expr = self.comparison()?;
+        let start_pos = expr.position().start().clone();
+
+        loop {
+            match self.peek().map(|t| t.value()) {
+                Some(operator @ (Token::EqualEqual | Token::BangEqual)) => {
+                    let (operator, _) = self.advance().unwrap().take();
+
+                    let (left, left_pos) = expr.take();
+                    let (right, right_pos) = self.comparison()?.take();
+
+                    expr = PositionTagged::new(
+                        Expression::Binary(Box::new(left), operator.clone(), Box::new(right)),
+                        Position::new(
+                            left_pos.file_name().clone(),
+                            *left_pos.start(),
+                            *right_pos.end(),
+                        ),
+                    );
+                }
+
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+
+        /*let start_pos = expr.pos().start_pos();
+
+        loop {
+            match self.peek().map(|t| t.value()) {
+                Some(operator & (Token::EqualEqual | Token::BangEqual)) => {
+                    self.advance();
+
+                    let right = self.comparison();
+                    expr = Expression::BinaryExpression(expr, operator, right);
+                }
+            }
+        }*/
+    }
+
+    fn comparison(&mut self) -> LoxResult<PositionTagged<Expression>> {
         self.unary()
     }
 

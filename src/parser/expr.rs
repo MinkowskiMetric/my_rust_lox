@@ -1,10 +1,12 @@
+use crate::Token;
 use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Literal(crate::Token),
-    Unary(crate::Token, Box<Expression>),
+    Literal(Token),
+    Unary(Token, Box<Expression>),
     Grouping(Box<Expression>),
+    Binary(Box<Expression>, Token, Box<Expression>),
 }
 
 impl fmt::Display for Expression {
@@ -13,6 +15,7 @@ impl fmt::Display for Expression {
             Self::Literal(token) => token.fmt(f),
             Self::Unary(operator, expr) => write!(f, "{}{}", operator, expr),
             Self::Grouping(expr) => write!(f, "({})", expr),
+            Self::Binary(left, operator, right) => write!(f, "{} {} {}", left, operator, right),
         }
     }
 }
