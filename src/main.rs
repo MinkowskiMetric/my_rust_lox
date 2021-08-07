@@ -11,7 +11,7 @@ mod value;
 pub use error::{LoxError, LoxResult};
 pub use interpreter::interpret;
 pub use lexer::{tokenize, tokenize_file, Token};
-pub use parser::{parse, Expression, ExpressionVisitor, Parser, UnaryOp};
+pub use parser::{parse, BinaryOp, Expression, ExpressionVisitor, Parser, UnaryOp};
 pub use position::{tag_position, FilePos, Position, PositionTagged};
 pub use value::Value;
 

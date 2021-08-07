@@ -1,4 +1,4 @@
-use crate::{Token, Value};
+use crate::Value;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -17,11 +17,44 @@ impl fmt::Display for UnaryOp {
 }
 
 #[derive(Debug, Clone)]
+pub enum BinaryOp {
+    Comma,
+    EqualEqual,
+    BangEqual,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            BinaryOp::Comma => write!(f, ","),
+            BinaryOp::EqualEqual => write!(f, "=="),
+            BinaryOp::BangEqual => write!(f, "!="),
+            BinaryOp::Greater => write!(f, ">"),
+            BinaryOp::GreaterEqual => write!(f, ">="),
+            BinaryOp::Less => write!(f, "<"),
+            BinaryOp::LessEqual => write!(f, "<="),
+            BinaryOp::Plus => write!(f, "+"),
+            BinaryOp::Minus => write!(f, "-"),
+            BinaryOp::Star => write!(f, "*"),
+            BinaryOp::Slash => write!(f, "/"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Value),
     Unary(UnaryOp, Box<Expression>),
     Grouping(Box<Expression>),
-    Binary(Box<Expression>, Token, Box<Expression>),
+    Binary(Box<Expression>, BinaryOp, Box<Expression>),
     Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
@@ -42,7 +75,12 @@ pub trait ExpressionVisitor {
 
     fn accept_literal(&mut self, value: &Value) -> Self::Return;
     fn accept_unary(&mut self, op: &UnaryOp, expr: &Expression) -> Self::Return;
-    fn accept_binary(&mut self, left: &Expression, op: &Token, right: &Expression) -> Self::Return;
+    fn accept_binary(
+        &mut self,
+        left: &Expression,
+        op: &BinaryOp,
+        right: &Expression,
+    ) -> Self::Return;
     fn accept_ternary(
         &mut self,
         comparison: &Expression,
@@ -70,7 +108,10 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
     type Return = Result<(), fmt::Error>;
 
     fn accept_literal(&mut self, value: &Value) -> Self::Return {
-        write!(self.f, "{}", value)
+        match value {
+            Value::String(s) => write!(self.f, "\"{}\"", s),
+            value => write!(self.f, "{}", value),
+        }
     }
 
     fn accept_unary(&mut self, operator: &UnaryOp, expression: &Expression) -> Self::Return {
@@ -80,7 +121,7 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
     fn accept_binary(
         &mut self,
         left: &Expression,
-        operator: &Token,
+        operator: &BinaryOp,
         right: &Expression,
     ) -> Self::Return {
         write!(self.f, "({} {} {})", left, operator, right)

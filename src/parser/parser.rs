@@ -1,5 +1,5 @@
 use super::Expression;
-use crate::{LoxError, LoxResult, Position, PositionTagged, Token, UnaryOp};
+use crate::{BinaryOp, LoxError, LoxResult, Position, PositionTagged, Token, UnaryOp};
 use std::iter::Peekable;
 
 pub struct Parser<Iter: Iterator<Item = PositionTagged<Token>>> {
@@ -7,33 +7,61 @@ pub struct Parser<Iter: Iterator<Item = PositionTagged<Token>>> {
 }
 
 macro_rules! binary_expression {
-    ($prsr:ident, $next:ident, Token::$first_op:ident $(| Token::$ops:ident)*) => {
-        let mut expr = $prsr.$next()?;
+    ($prsr:ident.match_binary_expression($next:ident) { $(Token::$token:ident => BinaryOp::$op:ident,)+ }) => {
+        let mut left = $prsr.$next()?;
 
         loop {
             match $prsr.peek().map(|t| t.value()) {
-                Some(Token::$first_op $(| Token::$ops)*) => {
-                    let (operator, _) = $prsr.advance().unwrap().take();
+                $(Some(Token::$token) => {
+                    // Skip past the operator since we already know what it is
+                    $prsr.advance();
 
-                    let (left, left_pos) = expr.take();
-                    let (right, right_pos) = $prsr.$next()?.take();
+                    let (left_expr, left_expr_pos) = left.take();
+                    let (right_expr, right_expr_pos) = $prsr.$next()?.take();
 
-                    expr = PositionTagged::new(
-                        Expression::Binary(Box::new(left), operator.clone(), Box::new(right)),
+                    left = PositionTagged::new(
+                        Expression::Binary(Box::new(left_expr), BinaryOp::$op, Box::new(right_expr)),
                         Position::new(
-                            left_pos.file_name().clone(),
-                            *left_pos.start(),
-                            *right_pos.end(),
-                        ),
+                            left_expr_pos.file_name().clone(),
+                            *left_expr_pos.start(),
+                            *right_expr_pos.end(),
+                        )
                     );
-                }
+                },)+
 
                 _ => break,
-            }
+            };
         }
 
-        Ok(expr)
+        Ok(left)
     };
+    /*($prsr:ident, $next:ident, Token::$first_op:ident $(| Token::$ops:ident)*) => {
+           let mut expr = $prsr.$next()?;
+
+           loop {
+               match $prsr.peek().map(|t| t.value()) {
+                   Some(Token::$first_op $(| Token::$ops)*) => {
+                       let (operator, _) = $prsr.advance().unwrap().take();
+
+                       let (left, left_pos) = expr.take();
+                       let (right, right_pos) = $prsr.$next()?.take();
+
+                       expr = PositionTagged::new(
+                           Expression::Binary(Box::new(left), operator.clone(), Box::new(right)),
+                           Position::new(
+                               left_pos.file_name().clone(),
+                               *left_pos.start(),
+                               *right_pos.end(),
+                           ),
+                       );
+                   }
+
+                   _ => break,
+               }
+           }
+
+           Ok(expr)
+       };*/
 }
 
 impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
@@ -66,11 +94,16 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
     }
 
     fn commma_sequence(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        binary_expression! { self, equality, Token::Comma }
+        binary_expression! { self.match_binary_expression(equality) {
+            Token::Comma => BinaryOp::Comma,
+        } }
     }
 
     fn equality(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        binary_expression! { self, ternary, Token::EqualEqual | Token::BangEqual }
+        binary_expression! { self.match_binary_expression(ternary) {
+            Token::EqualEqual => BinaryOp::EqualEqual,
+            Token::BangEqual => BinaryOp::BangEqual,
+        } }
     }
 
     fn ternary(&mut self) -> LoxResult<PositionTagged<Expression>> {
@@ -100,15 +133,26 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
     }
 
     fn comparison(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        binary_expression! { self, term, Token::Greater | Token::GreaterEqual | Token::Less | Token::LessEqual }
+        binary_expression! { self.match_binary_expression(term) {
+            Token::Greater => BinaryOp::Greater,
+            Token::GreaterEqual => BinaryOp::GreaterEqual,
+            Token::Less => BinaryOp::Less,
+            Token::LessEqual => BinaryOp::LessEqual,
+        } }
     }
 
     fn term(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        binary_expression! { self, factor, Token::Plus | Token::Minus }
+        binary_expression! { self.match_binary_expression(factor) {
+            Token::Plus => BinaryOp::Plus,
+            Token::Minus => BinaryOp::Minus,
+        } }
     }
 
     fn factor(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        binary_expression! { self, unary, Token::Star | Token::Slash }
+        binary_expression! { self.match_binary_expression(unary) {
+            Token::Star => BinaryOp::Star,
+            Token::Slash => BinaryOp::Slash,
+        } }
     }
 
     fn emit_unary_op(&mut self, operator: UnaryOp) -> LoxResult<PositionTagged<Expression>> {
