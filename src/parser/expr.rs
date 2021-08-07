@@ -1,21 +1,107 @@
-use crate::Token;
+use crate::{Token, Value};
 use std::fmt;
 
 #[derive(Debug, Clone)]
+pub enum UnaryOp {
+    Minus,
+    Bang,
+}
+
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            UnaryOp::Minus => write!(f, "-"),
+            UnaryOp::Bang => write!(f, "!"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
-    Literal(Token),
-    Unary(Token, Box<Expression>),
+    Literal(Value),
+    Unary(UnaryOp, Box<Expression>),
     Grouping(Box<Expression>),
     Binary(Box<Expression>, Token, Box<Expression>),
+    Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
+}
+
+pub trait ExpressionVisitor {
+    type Return;
+
+    fn accept_expression(&mut self, expr: &Expression) -> Self::Return {
+        match expr {
+            Expression::Literal(value) => self.accept_literal(value),
+            Expression::Unary(operator, expr) => self.accept_unary(operator, expr),
+            Expression::Grouping(expr) => self.accept_grouping(expr),
+            Expression::Binary(left, operator, right) => self.accept_binary(left, operator, right),
+            Expression::Ternary(comparison, true_val, false_val) => {
+                self.accept_ternary(comparison, true_val, false_val)
+            }
+        }
+    }
+
+    fn accept_literal(&mut self, value: &Value) -> Self::Return;
+    fn accept_unary(&mut self, op: &UnaryOp, expr: &Expression) -> Self::Return;
+    fn accept_binary(&mut self, left: &Expression, op: &Token, right: &Expression) -> Self::Return;
+    fn accept_ternary(
+        &mut self,
+        comparison: &Expression,
+        true_val: &Expression,
+        false_val: &Expression,
+    ) -> Self::Return;
+
+    // This might not be the best idea, but most of the time you don't care about these
+    fn accept_grouping(&mut self, expr: &Expression) -> Self::Return {
+        self.accept_expression(expr)
+    }
+}
+
+struct ExpressionPrinter<'a, 'b> {
+    f: &'a mut fmt::Formatter<'b>,
+}
+
+impl<'a, 'b> ExpressionPrinter<'a, 'b> {
+    fn new(f: &'a mut fmt::Formatter<'b>) -> Self {
+        Self { f }
+    }
+}
+
+impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
+    type Return = Result<(), fmt::Error>;
+
+    fn accept_literal(&mut self, value: &Value) -> Self::Return {
+        write!(self.f, "{}", value)
+    }
+
+    fn accept_unary(&mut self, operator: &UnaryOp, expression: &Expression) -> Self::Return {
+        write!(self.f, "({}{})", operator, expression)
+    }
+
+    fn accept_binary(
+        &mut self,
+        left: &Expression,
+        operator: &Token,
+        right: &Expression,
+    ) -> Self::Return {
+        write!(self.f, "({} {} {})", left, operator, right)
+    }
+
+    fn accept_ternary(
+        &mut self,
+        comparison: &Expression,
+        true_val: &Expression,
+        false_val: &Expression,
+    ) -> Self::Return {
+        write!(self.f, "({} ? {} : {})", comparison, true_val, false_val)
+    }
+
+    fn accept_grouping(&mut self, expr: &Expression) -> Self::Return {
+        write!(self.f, "({})", expr)
+    }
 }
 
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Self::Literal(token) => token.fmt(f),
-            Self::Unary(operator, expr) => write!(f, "{}{}", operator, expr),
-            Self::Grouping(expr) => write!(f, "({})", expr),
-            Self::Binary(left, operator, right) => write!(f, "{} {} {}", left, operator, right),
-        }
+        ExpressionPrinter::new(f).accept_expression(self)
     }
 }

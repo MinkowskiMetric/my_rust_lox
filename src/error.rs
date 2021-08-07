@@ -1,4 +1,4 @@
-use crate::{Position, Token};
+use crate::{Position, Token, Value};
 use std::{error, fmt, io};
 
 #[derive(Debug)]
@@ -11,11 +11,18 @@ pub enum LoxError {
     IoError(io::Error),
     UnexpectedToken(Token, Position),
     IncompleteExpression(Position),
+    ValueError(Value, String),
 }
 
 impl From<io::Error> for LoxError {
     fn from(e: io::Error) -> Self {
         Self::IoError(e)
+    }
+}
+
+impl From<std::convert::Infallible> for LoxError {
+    fn from(_: std::convert::Infallible) -> Self {
+        panic!("Infallible?")
     }
 }
 
@@ -33,6 +40,9 @@ impl fmt::Display for LoxError {
             Self::IoError(err) => write!(f, "{}", err),
             Self::UnexpectedToken(token, pos) => write!(f, "Unexpected token {} at {}", token, pos),
             Self::IncompleteExpression(pos) => write!(f, "Incomplete expression at {}", pos),
+            Self::ValueError(value, expected) => {
+                write!(f, "Found value {}, expected {}", value, expected)
+            }
 
             Self::TokenizationError(errs) => {
                 for err in errs {

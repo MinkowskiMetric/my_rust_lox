@@ -1,15 +1,19 @@
 use std::io;
 
 mod error;
+mod interpreter;
 mod lexer;
 mod parser;
 mod position;
 mod settings;
+mod value;
 
 pub use error::{LoxError, LoxResult};
+pub use interpreter::interpret;
 pub use lexer::{tokenize, tokenize_file, Token};
-pub use parser::{parse, Parser};
+pub use parser::{parse, Expression, ExpressionVisitor, Parser, UnaryOp};
 pub use position::{tag_position, FilePos, Position, PositionTagged};
+pub use value::Value;
 
 fn print_error(error: LoxError) {
     println!("Error: {}", error);
@@ -28,7 +32,8 @@ fn run_interactive() {
 
             match tokenize(&parse_data, "interactive", 1).and_then(|tokens| parse(tokens)) {
                 Ok(expr) => {
-                    println!("{}", expr.value());
+                    println!("EXPR: {}", expr.value());
+                    println!("RESULT: {:?}", interpret(expr.value()));
                     break;
                 }
 

@@ -1,5 +1,5 @@
 use super::Token;
-use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged};
+use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged, Value};
 use lazy_static::lazy_static;
 use maplit::hashmap;
 use std::{
@@ -15,17 +15,17 @@ lazy_static! {
         "and" => Token::And,
         "class" => Token::Class,
         "else" => Token::Else,
-        "false" => Token::False,
+        "false" => Token::Literal(Value::False),
         "for" => Token::For,
         "fun" => Token::Fun,
         "if" => Token::If,
-        "nil" => Token::Nil,
+        "nil" => Token::Literal(Value::Nil),
         "or" => Token::Or,
         "print" => Token::Print,
         "return" => Token::Return,
         "super" => Token::Super,
         "this" => Token::This,
-        "true" => Token::True,
+        "true" => Token::Literal(Value::True),
         "var" => Token::Var,
         "while" => Token::While,
     };
@@ -150,7 +150,7 @@ impl<'a> TokenReader<'a> {
         loop {
             match self.advance() {
                 None => return Err(LoxError::UnexpectedEndOfFile(self.token_position())),
-                Some('"') => return self.emit_token(Token::String(ret)),
+                Some('"') => return self.emit_token(Token::Literal(ret.into())),
 
                 Some('\\') => match self.advance() {
                     None => return Err(LoxError::UnexpectedEndOfFile(self.token_position())),
@@ -201,7 +201,7 @@ impl<'a> TokenReader<'a> {
 
                 _ => {
                     return match f64::from_str(&num_str) {
-                        Ok(num) => self.emit_token(Token::Number(num)),
+                        Ok(num) => self.emit_token(Token::Literal(num.into())),
                         Err(e) => Err(LoxError::InvalidNumber(e, self.token_position())),
                     };
                 }
@@ -258,6 +258,8 @@ impl<'a> Iterator for TokenReader<'a> {
             Some(';') => Some(self.emit_token(Token::Semicolon)),
             Some('*') => Some(self.emit_token(Token::Star)),
             Some('/') => Some(self.emit_token(Token::Slash)),
+            Some('?') => Some(self.emit_token(Token::QuestionMark)),
+            Some(':') => Some(self.emit_token(Token::Colon)),
 
             // One or two character tokens
             Some('!') if self.match_advance('=') => Some(self.emit_token(Token::BangEqual)),
@@ -439,20 +441,20 @@ mod test {
                 SimpleTokenMatch::new(Token::EqualEqual, 14, 16),
                 SimpleTokenMatch::new(Token::Equal, 16, 17),
                 SimpleTokenMatch::new(Token::Slash, 17, 18),
-                SimpleTokenMatch::new(Token::String("hello, world".into()), 18, 32),
-                SimpleTokenMatch::new(Token::Identifier("chimp012".into()), 32, 40),
+                SimpleTokenMatch::new(Token::Literal("hello, world".to_string().into()), 18, 32),
+                SimpleTokenMatch::new(Token::Identifier("chimp012".to_string().into()), 32, 40),
                 SimpleTokenMatch::new(Token::Plus, 40, 41),
             ],
         );
 
-        assert_single_token("0", Token::Number(0.0), 0, 1);
-        assert_single_token("0.", Token::Number(0.0), 0, 2);
-        assert_single_token("0.1234", Token::Number(0.1234), 0, 6);
-        assert_single_token("12.34", Token::Number(12.34), 0, 5);
+        assert_single_token("0", Token::Literal(0.0.into()), 0, 1);
+        assert_single_token("0.", Token::Literal(0.0.into()), 0, 2);
+        assert_single_token("0.1234", Token::Literal(0.1234.into()), 0, 6);
+        assert_single_token("12.34", Token::Literal(12.34.into()), 0, 5);
 
         assert_token_match(
             &tokenize("\n\n\"one\n\ntwo\"", "boo", 0).expect("failed to parse")[0],
-            &Token::String("one\n\ntwo".into()),
+            &Token::Literal("one\n\ntwo".to_string().into()),
             "boo",
             FilePos::new(2, 0),
             Some(FilePos::new(4, 4)),
