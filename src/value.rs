@@ -1,25 +1,22 @@
-use crate::LoxError;
-use std::{convert::TryFrom, fmt};
+use crate::{BValue, LoxError};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Nil;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
-    Nil,
-    True,
-    False,
-    Number(f64),
+    BValue(BValue),
     String(String),
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
-            Value::Nil => write!(f, "nil"),
-            Value::True => write!(f, "true"),
-            Value::False => write!(f, "false"),
-            Value::Number(num) => write!(f, "{}", num),
+            Value::BValue(val) => val.fmt(f),
             Value::String(s) => write!(f, "{}", s),
         }
     }
@@ -27,7 +24,7 @@ impl fmt::Display for Value {
 
 impl From<Nil> for Value {
     fn from(_: Nil) -> Value {
-        Value::Nil
+        Value::BValue(BValue::nil_val())
     }
 }
 
@@ -36,26 +33,22 @@ impl TryFrom<Value> for Nil {
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Nil => Ok(Self),
+            Value::BValue(bval) if bval.is_nil() => Ok(Self),
             v => Err(LoxError::ValueError(v, "nil".into())),
         }
     }
 }
 
 impl From<bool> for Value {
-    fn from(b: bool) -> Value {
-        match b {
-            true => Self::True,
-            false => Self::False,
-        }
+    fn from(b: bool) -> Self {
+        Self::BValue(BValue::from_bool(b))
     }
 }
 
 impl From<Value> for bool {
     fn from(v: Value) -> Self {
         match v {
-            Value::Nil => false,
-            Value::False => false,
+            Value::BValue(bv) => bv.to_bool(),
             _ => true,
         }
     }
@@ -63,7 +56,7 @@ impl From<Value> for bool {
 
 impl From<f64> for Value {
     fn from(f: f64) -> Self {
-        Self::Number(f)
+        Self::BValue(BValue::from(f))
     }
 }
 
@@ -72,7 +65,9 @@ impl TryFrom<Value> for f64 {
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Number(num) => Ok(num),
+            Value::BValue(bval) => bval
+                .try_into()
+                .map_err(|_| LoxError::ValueError(v, "number".into())),
             v => Err(LoxError::ValueError(v, "number".into())),
         }
     }
@@ -117,13 +112,14 @@ mod test {
         v == t.into()
     }
 
-    fn check_rust_equal_value<T>(check_value: T, v: Value) -> bool
+    fn check_rust_equal_value<E, T>(check_value: T, v: Value) -> bool
     where
-        T: TryFrom<Value> + PartialEq,
+        E: fmt::Debug,
+        T: TryFrom<Value, Error = E> + PartialEq + fmt::Debug,
     {
         match T::try_from(v) {
             Ok(v) => v == check_value,
-            _ => false,
+            Err(e) => panic!("{:?} {:?}", e, check_value), //false,
         }
     }
 
@@ -141,12 +137,12 @@ mod test {
 
     #[test]
     fn nil_test() {
-        assert!(check_value_equal_rust(Value::Nil, Nil));
-        assert!(check_rust_equal_value(Nil, Value::Nil));
+        assert!(check_value_equal_rust(Value::from(Nil), Nil));
+        assert!(check_rust_equal_value(Nil, Value::from(Nil)));
 
-        assert!(check_invalid_type::<Nil>(Value::True, "nil"));
-        assert!(check_invalid_type::<Nil>(Value::False, "nil"));
-        assert!(check_invalid_type::<Nil>(Value::Number(19.0), "nil"));
+        assert!(check_invalid_type::<Nil>(Value::from(true), "nil"));
+        assert!(check_invalid_type::<Nil>(Value::from(false), "nil"));
+        assert!(check_invalid_type::<Nil>(Value::from(19.0), "nil"));
         assert!(check_invalid_type::<Nil>(
             Value::String("boo".into()),
             "nil"
@@ -156,18 +152,18 @@ mod test {
     #[test]
     fn bool_test() {
         // First check that bool properly converts into Value
-        assert!(check_value_equal_rust(Value::False, false));
-        assert!(check_value_equal_rust(Value::True, true));
-        assert!(check_rust_equal_value(false, Value::False));
-        assert!(check_rust_equal_value(true, Value::True));
+        assert!(check_value_equal_rust(Value::from(false), false));
+        assert!(check_value_equal_rust(Value::from(true), true));
+        assert!(check_rust_equal_value(false, Value::from(false)));
+        assert!(check_rust_equal_value(true, Value::from(true)));
 
         // Now check truthiness
-        assert!(check_rust_equal_value(false, Value::Nil));
-        assert!(check_rust_equal_value(false, Value::False));
-        assert!(check_rust_equal_value(true, Value::True));
-        assert!(check_rust_equal_value(true, Value::Number(0.0)));
-        assert!(check_rust_equal_value(true, Value::Number(10.0)));
-        assert!(check_rust_equal_value(true, Value::String("".to_string())));
+        assert!(check_rust_equal_value(false, Value::from(Nil)));
+        assert!(check_rust_equal_value(false, Value::from(false)));
+        assert!(check_rust_equal_value(true, Value::from(true)));
+        assert!(check_rust_equal_value(true, Value::from(0.0)));
+        assert!(check_rust_equal_value(true, Value::from(10.0)));
+        assert!(check_rust_equal_value(true, Value::from("".to_string())));
         assert!(check_rust_equal_value(
             true,
             Value::String("true".to_string())
@@ -180,14 +176,18 @@ mod test {
 
     #[test]
     fn number_test() {
-        assert!(check_value_equal_rust(Value::Number(0.0), 0.0));
-        assert!(check_value_equal_rust(Value::Number(-17.0), -17.0));
-        assert!(check_rust_equal_value(0.0, Value::Number(0.0)));
-        assert!(check_rust_equal_value(-17.0, Value::Number(-17.0)));
+        assert!(check_value_equal_rust(Value::from(0.0), 0.0));
+        assert!(check_value_equal_rust(Value::from(-17.0), -17.0));
+        assert!(check_rust_equal_value(0.0, Value::from(0.0)));
+        assert!(check_rust_equal_value(-17.0, Value::from(-17.0)));
 
-        assert!(check_invalid_type::<f64>(Value::Nil, "number"));
-        assert!(check_invalid_type::<f64>(Value::True, "number"));
-        assert!(check_invalid_type::<f64>(Value::False, "number"));
+        assert!(
+            check_invalid_type::<f64>(Value::from(Nil), "number"),
+            "{:?}",
+            f64::try_from(Value::from(Nil))
+        );
+        assert!(check_invalid_type::<f64>(Value::from(true), "number"));
+        assert!(check_invalid_type::<f64>(Value::from(false), "number"));
         assert!(check_invalid_type::<f64>(
             Value::String("boo".into()),
             "number"
@@ -221,19 +221,19 @@ mod test {
             Value::String("world".to_string())
         ));
 
-        assert!(check_invalid_type::<String>(Value::Nil, "string"));
-        assert!(check_invalid_type::<String>(Value::True, "string"));
-        assert!(check_invalid_type::<String>(Value::False, "string"));
-        assert!(check_invalid_type::<String>(Value::Number(10.0), "string"));
+        assert!(check_invalid_type::<String>(Value::from(Nil), "string"));
+        assert!(check_invalid_type::<String>(Value::from(true), "string"));
+        assert!(check_invalid_type::<String>(Value::from(false), "string"));
+        assert!(check_invalid_type::<String>(Value::from(10.0), "string"));
     }
 
     #[test]
     fn display_test() {
-        assert_eq!(Value::Nil.to_string(), "nil");
-        assert_eq!(Value::True.to_string(), "true");
-        assert_eq!(Value::False.to_string(), "false");
-        assert_eq!(Value::Number(0.0).to_string(), "0");
-        assert_eq!(Value::Number(-17.0).to_string(), "-17");
+        assert_eq!(Value::from(Nil).to_string(), "nil");
+        assert_eq!(Value::from(true).to_string(), "true");
+        assert_eq!(Value::from(false).to_string(), "false");
+        assert_eq!(Value::from(0.0).to_string(), "0");
+        assert_eq!(Value::from(-17.0).to_string(), "-17");
         assert_eq!(Value::String("hello".into()).to_string(), "hello");
     }
 }

@@ -1,5 +1,5 @@
 use super::Token;
-use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged, Value};
+use crate::{FilePos, LoxError, LoxResult, Nil, Position, PositionTagged, Value};
 use lazy_static::lazy_static;
 use maplit::hashmap;
 use std::{
@@ -15,17 +15,17 @@ lazy_static! {
         "and" => Token::And,
         "class" => Token::Class,
         "else" => Token::Else,
-        "false" => Token::Literal(Value::False),
+        "false" => Token::Literal(Value::from(false)),
         "for" => Token::For,
         "fun" => Token::Fun,
         "if" => Token::If,
-        "nil" => Token::Literal(Value::Nil),
+        "nil" => Token::Literal(Value::from(Nil)),
         "or" => Token::Or,
         "print" => Token::Print,
         "return" => Token::Return,
         "super" => Token::Super,
         "this" => Token::This,
-        "true" => Token::Literal(Value::True),
+        "true" => Token::Literal(Value::from(true)),
         "var" => Token::Var,
         "while" => Token::While,
     };

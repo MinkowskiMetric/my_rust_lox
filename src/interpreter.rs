@@ -88,7 +88,11 @@ impl ExpressionVisitor for Interpreter {
         true_val: &Expression,
         false_val: &Expression,
     ) -> Self::Return {
-        todo!()
+        if bool::from(self.accept_expression(comparison)?) {
+            self.accept_expression(true_val)
+        } else {
+            self.accept_expression(false_val)
+        }
     }
 }
 

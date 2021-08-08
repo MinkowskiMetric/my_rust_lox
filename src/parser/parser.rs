@@ -35,33 +35,6 @@ macro_rules! binary_expression {
 
         Ok(left)
     };
-    /*($prsr:ident, $next:ident, Token::$first_op:ident $(| Token::$ops:ident)*) => {
-           let mut expr = $prsr.$next()?;
-
-           loop {
-               match $prsr.peek().map(|t| t.value()) {
-                   Some(Token::$first_op $(| Token::$ops)*) => {
-                       let (operator, _) = $prsr.advance().unwrap().take();
-
-                       let (left, left_pos) = expr.take();
-                       let (right, right_pos) = $prsr.$next()?.take();
-
-                       expr = PositionTagged::new(
-                           Expression::Binary(Box::new(left), operator.clone(), Box::new(right)),
-                           Position::new(
-                               left_pos.file_name().clone(),
-                               *left_pos.start(),
-                               *right_pos.end(),
-                           ),
-                       );
-                   }
-
-                   _ => break,
-               }
-           }
-
-           Ok(expr)
-       };*/
 }
 
 impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
