@@ -1,4 +1,7 @@
-use crate::{BinaryOp, Expression, ExpressionVisitor, LoxResult, UnaryOp, Value};
+use crate::{
+    BinaryOp, Expression, ExpressionVisitor, LoxResult, PositionTagged, Statement,
+    StatementVisitor, UnaryOp, Value,
+};
 use std::convert::TryFrom;
 
 struct Interpreter;
@@ -96,6 +99,29 @@ impl ExpressionVisitor for Interpreter {
     }
 }
 
-pub fn interpret(expr: &Expression) -> LoxResult<Value> {
-    Interpreter::new().accept_expression(expr)
+impl StatementVisitor for Interpreter {
+    type Return = LoxResult<()>;
+
+    fn accept_expression_statement(&mut self, expr: &Expression) -> Self::Return {
+        self.accept_expression(expr)?;
+        Ok(())
+    }
+
+    fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return {
+        let output = self.accept_expression(expr)?;
+        println!("{}", output);
+        Ok(())
+    }
+}
+
+pub fn interpret<'a>(
+    stmts: impl IntoIterator<Item = &'a PositionTagged<Statement>>,
+) -> LoxResult<()> {
+    let mut interpreter = Interpreter::new();
+
+    for stmt in stmts {
+        interpreter.accept_statement(stmt.value())?;
+    }
+
+    Ok(())
 }

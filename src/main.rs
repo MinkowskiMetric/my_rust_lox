@@ -13,7 +13,10 @@ pub use bvalue::{BValue, BValueType};
 pub use error::{LoxError, LoxResult};
 pub use interpreter::interpret;
 pub use lexer::{tokenize, tokenize_file, Token};
-pub use parser::{parse, BinaryOp, Expression, ExpressionVisitor, Parser, UnaryOp};
+pub use parser::{
+    parse, parse_expression, parse_statement, BinaryOp, Expression, ExpressionVisitor, Parser,
+    Statement, StatementVisitor, UnaryOp,
+};
 pub use position::{tag_position, FilePos, Position, PositionTagged};
 pub use value::{Nil, Value};
 
@@ -32,17 +35,23 @@ fn run_interactive() {
 
             parse_data.push_str(&line);
 
-            match tokenize(&parse_data, "interactive", 1).and_then(|tokens| parse(tokens)) {
-                Ok(expr) => {
-                    println!("EXPR: {}", expr.value());
-                    println!("RESULT: {:?}", interpret(expr.value()));
-                    break;
-                }
-
+            let statements: LoxResult<Vec<_>> =
+                tokenize(&parse_data, "interactive", 1).and_then(|tokens| parse(tokens).collect());
+            match statements {
                 Err(LoxError::IncompleteExpression(_)) => continue, // Get the next line
                 Err(err) => {
                     print_error(err);
                     break;
+                }
+
+                Ok(statements) => {
+                    match interpret(statements.iter()) {
+                        Ok(_) => (),
+                        Err(err) => {
+                            print_error(err);
+                            break;
+                        }
+                    };
                 }
             }
         }
