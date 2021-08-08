@@ -1,8 +1,5 @@
 use crate::LoxError;
-use std::{
-    convert::{Infallible, TryFrom, TryInto},
-    fmt,
-};
+use std::{convert::TryFrom, fmt};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Nil;

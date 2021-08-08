@@ -1,4 +1,4 @@
-use crate::{Position, Token, Value};
+use crate::{BValue, BValueType, Position, Token, Value};
 use std::{error, fmt, io};
 
 #[derive(Debug)]
@@ -12,6 +12,7 @@ pub enum LoxError {
     UnexpectedToken(Token, Position),
     IncompleteExpression(Position),
     ValueError(Value, String),
+    BValueTypeError(BValue, BValueType),
 }
 
 impl From<io::Error> for LoxError {
@@ -42,6 +43,9 @@ impl fmt::Display for LoxError {
             Self::IncompleteExpression(pos) => write!(f, "Incomplete expression at {}", pos),
             Self::ValueError(value, expected) => {
                 write!(f, "Found value {}, expected {}", value, expected)
+            }
+            Self::BValueTypeError(value, expected_type) => {
+                write!(f, "Found value {}, expected {}", value, expected_type)
             }
 
             Self::TokenizationError(errs) => {

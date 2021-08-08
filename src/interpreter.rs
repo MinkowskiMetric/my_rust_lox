@@ -1,4 +1,4 @@
-use crate::{BinaryOp, Expression, ExpressionVisitor, LoxResult, Token, UnaryOp, Value};
+use crate::{BinaryOp, Expression, ExpressionVisitor, LoxResult, UnaryOp, Value};
 use std::convert::TryFrom;
 
 struct Interpreter;

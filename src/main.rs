@@ -1,5 +1,6 @@
 use std::io;
 
+mod bvalue;
 mod error;
 mod interpreter;
 mod lexer;
@@ -8,12 +9,13 @@ mod position;
 mod settings;
 mod value;
 
+pub use bvalue::{BValue, BValueType};
 pub use error::{LoxError, LoxResult};
 pub use interpreter::interpret;
 pub use lexer::{tokenize, tokenize_file, Token};
 pub use parser::{parse, BinaryOp, Expression, ExpressionVisitor, Parser, UnaryOp};
 pub use position::{tag_position, FilePos, Position, PositionTagged};
-pub use value::Value;
+pub use value::{Nil, Value};
 
 fn print_error(error: LoxError) {
     println!("Error: {}", error);
