@@ -1,5 +1,9 @@
-fun main() {
-    print "the answer is " + 42.0;
-}
+1+2;
 
-main();
+print "hello " + (9/2);
+
+//fun main() {
+//   print "the answer is " + 42.0;
+//}
+
+//main();

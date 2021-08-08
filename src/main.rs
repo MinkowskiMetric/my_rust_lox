@@ -59,9 +59,9 @@ fn run_interactive() {
 }
 
 fn run_file(input_file: &str) -> LoxResult<()> {
-    println!("Tokens: {:#?}", lexer::tokenize_file(input_file)?);
-
-    Ok(())
+    lexer::tokenize_file(input_file)
+        .and_then(|tokens| parse(tokens).collect())
+        .and_then(|stmts: Vec<_>| interpret(&stmts))
 }
 
 fn main() {
