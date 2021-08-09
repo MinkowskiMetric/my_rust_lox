@@ -13,6 +13,8 @@ pub enum LoxError {
     IncompleteExpression(Position),
     ValueError(Value, String),
     BValueTypeError(BValue, BValueType),
+    MissingIdentifier(Position),
+    UnknownVariable(String),
 }
 
 impl From<io::Error> for LoxError {
@@ -47,6 +49,8 @@ impl fmt::Display for LoxError {
             Self::BValueTypeError(value, expected_type) => {
                 write!(f, "Found value {}, expected {}", value, expected_type)
             }
+            Self::MissingIdentifier(pos) => write!(f, "Identifier missing at {}", pos),
+            Self::UnknownVariable(name) => write!(f, "Unknown variable '{}'", name),
 
             Self::TokenizationError(errs) => {
                 for err in errs {

@@ -5,6 +5,7 @@ use std::fmt;
 pub enum Statement {
     Expression(Expression),
     Print(Expression),
+    VarDeclaration(String, Expression),
 }
 
 pub trait StatementVisitor {
@@ -14,11 +15,15 @@ pub trait StatementVisitor {
         match stmt {
             Statement::Expression(expr) => self.accept_expression_statement(expr),
             Statement::Print(expr) => self.accept_print_statement(expr),
+            Statement::VarDeclaration(identifier, expr) => {
+                self.accept_var_declaration(identifier, expr)
+            }
         }
     }
 
     fn accept_expression_statement(&mut self, expr: &Expression) -> Self::Return;
     fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return;
+    fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -40,6 +45,10 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
 
     fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return {
         writeln!(self.f, "print {};", expr)
+    }
+
+    fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return {
+        writeln!(self.f, "var {} = {};", identifier, expr)
     }
 }
 

@@ -1,14 +1,75 @@
 use crate::{
-    BinaryOp, Expression, ExpressionVisitor, LoxResult, PositionTagged, Statement,
+    BinaryOp, Expression, ExpressionVisitor, LoxError, LoxResult, PositionTagged, Statement,
     StatementVisitor, UnaryOp, Value,
 };
-use std::convert::TryFrom;
+use std::{collections::HashMap, convert::TryFrom};
 
-struct Interpreter;
+struct Enviroment {
+    variables: HashMap<String, Value>,
+}
+
+impl Enviroment {
+    fn new() -> Self {
+        Enviroment {
+            variables: HashMap::new(),
+        }
+    }
+
+    fn declare(&mut self, name: &str, value: Value) -> LoxResult<()> {
+        self.variables.insert(name.to_string(), value);
+        Ok(())
+    }
+
+    fn get(&self, name: &str) -> LoxResult<Value> {
+        match self.variables.get(name) {
+            Some(v) => Ok(v.clone()),
+            None => Err(LoxError::UnknownVariable(name.to_string())),
+        }
+    }
+
+    fn set(&mut self, name: &str, value: Value) -> LoxResult<()> {
+        match self.variables.get_mut(name) {
+            Some(v) => {
+                *v = value;
+                Ok(())
+            }
+            None => Err(LoxError::UnknownVariable(name.to_string())),
+        }
+    }
+}
+
+pub struct Interpreter {
+    env: Enviroment,
+}
 
 impl Interpreter {
-    fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self {
+            env: Enviroment::new(),
+        }
+    }
+
+    pub fn accept_statements<'a>(
+        &mut self,
+        stmts: impl IntoIterator<Item = &'a PositionTagged<Statement>>,
+    ) -> LoxResult<()> {
+        for stmt in stmts {
+            self.accept_statement(stmt.value())?;
+        }
+
+        Ok(())
+    }
+
+    fn declare_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
+        self.env.declare(name, value)
+    }
+
+    fn get_variable(&self, name: &str) -> LoxResult<Value> {
+        self.env.get(name)
+    }
+
+    fn set_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
+        self.env.set(name, value)
     }
 }
 
@@ -97,6 +158,15 @@ impl ExpressionVisitor for Interpreter {
             self.accept_expression(false_val)
         }
     }
+
+    fn accept_variable_get(&mut self, name: &str) -> Self::Return {
+        self.get_variable(name)
+    }
+
+    fn accept_assignment(&mut self, name: &str, value: &Expression) -> Self::Return {
+        let value = self.accept_expression(value)?;
+        self.set_variable(name, value.clone()).map(|_| value)
+    }
 }
 
 impl StatementVisitor for Interpreter {
@@ -112,16 +182,15 @@ impl StatementVisitor for Interpreter {
         println!("{}", output);
         Ok(())
     }
+
+    fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return {
+        let value = self.accept_expression(expr)?;
+        self.declare_variable(identifier, value)
+    }
 }
 
 pub fn interpret<'a>(
     stmts: impl IntoIterator<Item = &'a PositionTagged<Statement>>,
 ) -> LoxResult<()> {
-    let mut interpreter = Interpreter::new();
-
-    for stmt in stmts {
-        interpreter.accept_statement(stmt.value())?;
-    }
-
-    Ok(())
+    Interpreter::new().accept_statements(stmts)
 }

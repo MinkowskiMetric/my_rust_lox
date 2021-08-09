@@ -11,11 +11,10 @@ mod value;
 
 pub use bvalue::{BValue, BValueType};
 pub use error::{LoxError, LoxResult};
-pub use interpreter::interpret;
+pub use interpreter::{interpret, Interpreter};
 pub use lexer::{tokenize, tokenize_file, Token};
 pub use parser::{
-    parse, parse_expression, parse_statement, BinaryOp, Expression, ExpressionVisitor, Parser,
-    Statement, StatementVisitor, UnaryOp,
+    parse, BinaryOp, Expression, ExpressionVisitor, Parser, Statement, StatementVisitor, UnaryOp,
 };
 pub use position::{tag_position, FilePos, Position, PositionTagged};
 pub use value::{Nil, Value};
@@ -27,6 +26,7 @@ fn print_error(error: LoxError) {
 fn run_interactive() {
     loop {
         let mut parse_data = String::new();
+        let mut interpreter = Interpreter::new();
         loop {
             let mut line = String::new();
             if io::stdin().read_line(&mut line).is_err() {
@@ -45,7 +45,9 @@ fn run_interactive() {
                 }
 
                 Ok(statements) => {
-                    match interpret(statements.iter()) {
+                    parse_data = String::new();
+
+                    match interpreter.accept_statements(statements.iter()) {
                         Ok(_) => (),
                         Err(err) => {
                             print_error(err);

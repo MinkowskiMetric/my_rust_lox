@@ -1,5 +1,7 @@
 use super::Expression;
-use crate::{BinaryOp, LoxError, LoxResult, Position, PositionTagged, Statement, Token, UnaryOp};
+use crate::{
+    BinaryOp, LoxError, LoxResult, Nil, Position, PositionTagged, Statement, Token, UnaryOp, Value,
+};
 use std::iter::Peekable;
 
 pub struct Parser<Iter: Iterator<Item = PositionTagged<Token>>> {
@@ -52,6 +54,19 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
         self.tokens.next()
     }
 
+    fn advance_if<R>(&mut self, f: impl FnOnce(&Token) -> Option<R>) -> Option<PositionTagged<R>> {
+        match self
+            .peek()
+            .and_then(|pt| f(pt.value()).map(|r| PositionTagged::new(r, pt.position().clone())))
+        {
+            Some(r) => {
+                self.advance();
+                Some(r)
+            }
+            None => None,
+        }
+    }
+
     fn match_exact_token(&mut self, token: Token) -> LoxResult<(Token, Position)> {
         match self.advance().map(|t| t.take()) {
             Some((check_token, pos)) if check_token == token => Ok((check_token, pos)),
@@ -60,6 +75,48 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
             Some((check_token, pos)) => Err(LoxError::UnexpectedToken(check_token, pos)),
             None => panic!("End of file token missing"),
         }
+    }
+
+    fn declaration(&mut self) -> LoxResult<PositionTagged<Statement>> {
+        match self.peek().map(|t| t.value()) {
+            Some(Token::Var) => {
+                let token = self.advance().unwrap();
+                self.var_declaration(token)
+            }
+            _ => self.statement(),
+        }
+    }
+
+    fn var_declaration(
+        &mut self,
+        declare_token: PositionTagged<Token>,
+    ) -> LoxResult<PositionTagged<Statement>> {
+        let (name, _) = self
+            .advance_if(|t| match t {
+                Token::Identifier(name) => Some(name.clone()),
+                _ => None,
+            })
+            .ok_or(LoxError::MissingIdentifier(
+                declare_token.position().clone(),
+            ))?
+            .take();
+
+        let expr = if self
+            .advance_if(|t| if *t == Token::Equal { Some(()) } else { None })
+            .is_some()
+        {
+            self.expression()?.take().0
+        } else {
+            Expression::Literal(Value::from(Nil))
+        };
+
+        let (_, semi_pos) = self.match_exact_token(Token::Semicolon)?;
+
+        Ok(PositionTagged::new_from_to(
+            Statement::VarDeclaration(name, expr),
+            declare_token.position().clone(),
+            semi_pos,
+        ))
     }
 
     fn statement(&mut self) -> LoxResult<PositionTagged<Statement>> {
@@ -76,24 +133,55 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
         let (expr, expr_pos) = self.expression()?.take();
         let (_, semi_pos) = self.match_exact_token(Token::Semicolon)?;
 
-        Ok((PositionTagged::new_from_to(Statement::Expression(expr), expr_pos, semi_pos)))
+        Ok(PositionTagged::new_from_to(
+            Statement::Expression(expr),
+            expr_pos,
+            semi_pos,
+        ))
     }
 
     fn print_statement(&mut self) -> LoxResult<PositionTagged<Statement>> {
         let (expr, expr_pos) = self.expression()?.take();
         let (_, semi_pos) = self.match_exact_token(Token::Semicolon)?;
 
-        Ok((PositionTagged::new_from_to(Statement::Print(expr), expr_pos, semi_pos)))
+        Ok(PositionTagged::new_from_to(
+            Statement::Print(expr),
+            expr_pos,
+            semi_pos,
+        ))
     }
 
     fn expression(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        self.commma_sequence()
+        self.comma_sequence()
     }
 
-    fn commma_sequence(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        binary_expression! { self.match_binary_expression(equality) {
+    fn comma_sequence(&mut self) -> LoxResult<PositionTagged<Expression>> {
+        binary_expression! { self.match_binary_expression(assignment) {
             Token::Comma => BinaryOp::Comma,
         } }
+    }
+
+    fn assignment(&mut self) -> LoxResult<PositionTagged<Expression>> {
+        let (expr, expr_pos) = self.equality()?.take();
+
+        match &expr {
+            Expression::VariableGet(name) => match self.peek().map(|t| t.value()) {
+                Some(Token::Equal) => {
+                    let (_, equal_pos) = self.advance().expect("no value").take();
+                    let (value, value_pos) = self.assignment()?.take();
+
+                    Ok(PositionTagged::new_from_to(
+                        Expression::Assignment(name.to_string(), Box::new(value)),
+                        expr_pos,
+                        value_pos,
+                    ))
+                }
+
+                _ => Ok(PositionTagged::new(expr, expr_pos)),
+            },
+
+            _ => Ok(PositionTagged::new(expr, expr_pos)),
+        }
     }
 
     fn equality(&mut self) -> LoxResult<PositionTagged<Expression>> {
@@ -187,6 +275,9 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
             Some((Token::Literal(value), pos)) => {
                 Ok(PositionTagged::new(Expression::Literal(value), pos))
             }
+            Some((Token::Identifier(name), pos)) => {
+                Ok(PositionTagged::new(Expression::VariableGet(name), pos))
+            }
             Some((Token::EndOfFile, pos)) => Err(LoxError::IncompleteExpression(pos)),
             Some((token, pos)) => Err(LoxError::UnexpectedToken(token, pos)),
             None => panic!("End of file token missing"),
@@ -200,40 +291,13 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Iterator for Parser<Iter> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.peek().map(|t| t.value()) {
             Some(Token::EndOfFile) | None => None,
-            _ => Some(self.statement()),
+            _ => Some(self.declaration()),
         }
     }
-}
-
-pub fn parse_expression(
-    tokens: Vec<PositionTagged<Token>>,
-) -> LoxResult<PositionTagged<Expression>> {
-    let mut parser = Parser::new(tokens.into_iter());
-    parser.expression()
-}
-
-pub fn parse_statement(tokens: Vec<PositionTagged<Token>>) -> LoxResult<PositionTagged<Statement>> {
-    let mut parser = Parser::new(tokens.into_iter());
-    parser.statement()
 }
 
 pub fn parse(
     tokens: impl IntoIterator<Item = PositionTagged<Token>>,
 ) -> impl Iterator<Item = LoxResult<PositionTagged<Statement>>> {
     Parser::new(tokens.into_iter())
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    fn test_parse_expression(tokens: Vec<Token>) {
-        let tokens: Vec<_> = tokens.into_iter().map(|a| a.into()).collect();
-        parse_expression(tokens).expect("Failed to parse");
-    }
-
-    #[test]
-    fn test_parser() {
-        test_parse_expression(vec![Token::Literal(1.0.into()), Token::EndOfFile]);
-    }
 }

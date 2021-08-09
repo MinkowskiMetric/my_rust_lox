@@ -56,6 +56,8 @@ pub enum Expression {
     Grouping(Box<Expression>),
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
     Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
+    VariableGet(String),
+    Assignment(String, Box<Expression>),
 }
 
 pub trait ExpressionVisitor {
@@ -70,6 +72,8 @@ pub trait ExpressionVisitor {
             Expression::Ternary(comparison, true_val, false_val) => {
                 self.accept_ternary(comparison, true_val, false_val)
             }
+            Expression::VariableGet(identifier) => self.accept_variable_get(identifier),
+            Expression::Assignment(identifier, value) => self.accept_assignment(identifier, value),
         }
     }
 
@@ -87,6 +91,8 @@ pub trait ExpressionVisitor {
         true_val: &Expression,
         false_val: &Expression,
     ) -> Self::Return;
+    fn accept_variable_get(&mut self, name: &str) -> Self::Return;
+    fn accept_assignment(&mut self, name: &str, value: &Expression) -> Self::Return;
 
     // This might not be the best idea, but most of the time you don't care about these
     fn accept_grouping(&mut self, expr: &Expression) -> Self::Return {
@@ -138,6 +144,14 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
 
     fn accept_grouping(&mut self, expr: &Expression) -> Self::Return {
         write!(self.f, "({})", expr)
+    }
+
+    fn accept_variable_get(&mut self, name: &str) -> Self::Return {
+        self.f.write_str(name)
+    }
+
+    fn accept_assignment(&mut self, name: &str, value: &Expression) -> Self::Return {
+        write!(self.f, "({} = {})", name, value)
     }
 }
 
