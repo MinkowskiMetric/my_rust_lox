@@ -5,47 +5,56 @@ use crate::{
 use std::{collections::HashMap, convert::TryFrom};
 
 struct Enviroment {
+    enclosing: Option<Box<Self>>,
     variables: HashMap<String, Value>,
 }
 
 impl Enviroment {
-    fn new() -> Self {
-        Enviroment {
+    fn new(enclosing: Option<Box<Self>>) -> Self {
+        Self {
+            enclosing,
             variables: HashMap::new(),
         }
     }
 
-    fn declare(&mut self, name: &str, value: Value) -> LoxResult<()> {
+    pub fn discard(mut self) -> Option<Box<Self>> {
+        self.enclosing.take()
+    }
+
+    pub fn declare(&mut self, name: &str, value: Value) -> LoxResult<()> {
         self.variables.insert(name.to_string(), value);
         Ok(())
     }
 
-    fn get(&self, name: &str) -> LoxResult<Value> {
+    pub fn get(&self, name: &str) -> LoxResult<&Value> {
         match self.variables.get(name) {
-            Some(v) => Ok(v.clone()),
-            None => Err(LoxError::UnknownVariable(name.to_string())),
+            Some(v) => Ok(v),
+            None => match &self.enclosing {
+                Some(enclosing) => enclosing.get(name),
+                None => Err(LoxError::UnknownVariable(name.to_string())),
+            },
         }
     }
 
-    fn set(&mut self, name: &str, value: Value) -> LoxResult<()> {
+    pub fn get_mut(&mut self, name: &str) -> LoxResult<&mut Value> {
         match self.variables.get_mut(name) {
-            Some(v) => {
-                *v = value;
-                Ok(())
-            }
-            None => Err(LoxError::UnknownVariable(name.to_string())),
+            Some(v) => Ok(v),
+            None => match self.enclosing.as_mut() {
+                Some(enclosing) => enclosing.get_mut(name),
+                None => Err(LoxError::UnknownVariable(name.to_string())),
+            },
         }
     }
 }
 
 pub struct Interpreter {
-    env: Enviroment,
+    env: Option<Box<Enviroment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            env: Enviroment::new(),
+            env: Some(Box::new(Enviroment::new(None))),
         }
     }
 
@@ -60,16 +69,50 @@ impl Interpreter {
         Ok(())
     }
 
+    fn get_env(&self) -> &Enviroment {
+        self.env
+            .as_ref()
+            .expect("Interpreter environment is inconsistent")
+    }
+
+    fn get_env_mut(&mut self) -> &mut Enviroment {
+        self.env
+            .as_mut()
+            .expect("Interpreter environment is inconsistent")
+    }
+
     fn declare_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
-        self.env.declare(name, value)
+        self.get_env_mut().declare(name, value)
     }
 
     fn get_variable(&self, name: &str) -> LoxResult<Value> {
-        self.env.get(name)
+        Ok(self.get_env().get(name)?.clone())
     }
 
     fn set_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
-        self.env.set(name, value)
+        *self.get_env_mut().get_mut(name)? = value;
+        Ok(())
+    }
+
+    fn push_environment(&mut self) {
+        let new_environment = Box::new(Enviroment::new(self.env.take()));
+        self.env.replace(new_environment);
+    }
+
+    fn pop_environment(&mut self) {
+        let outer_environment = self
+            .env
+            .take()
+            .expect("Interpreter environment is inconsistent")
+            .discard();
+        self.env = outer_environment;
+    }
+
+    fn run_in_nested_environment<R, F: FnOnce(&mut Self) -> R>(&mut self, f: F) -> R {
+        self.push_environment();
+        let r = f(self);
+        self.pop_environment();
+        r
     }
 }
 
@@ -186,6 +229,16 @@ impl StatementVisitor for Interpreter {
     fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return {
         let value = self.accept_expression(expr)?;
         self.declare_variable(identifier, value)
+    }
+
+    fn accept_block(&mut self, statements: &[Statement]) -> Self::Return {
+        self.run_in_nested_environment(|interpreter| {
+            for statement in statements {
+                interpreter.accept_statement(statement)?;
+            }
+
+            Ok(())
+        })
     }
 }
 

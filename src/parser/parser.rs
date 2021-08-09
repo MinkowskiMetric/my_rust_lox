@@ -79,26 +79,20 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
 
     fn declaration(&mut self) -> LoxResult<PositionTagged<Statement>> {
         match self.peek().map(|t| t.value()) {
-            Some(Token::Var) => {
-                let token = self.advance().unwrap();
-                self.var_declaration(token)
-            }
+            Some(Token::Var) => self.var_declaration(),
             _ => self.statement(),
         }
     }
 
-    fn var_declaration(
-        &mut self,
-        declare_token: PositionTagged<Token>,
-    ) -> LoxResult<PositionTagged<Statement>> {
+    fn var_declaration(&mut self) -> LoxResult<PositionTagged<Statement>> {
+        let (_, declare_pos) = self.match_exact_token(Token::Var)?;
+
         let (name, _) = self
             .advance_if(|t| match t {
                 Token::Identifier(name) => Some(name.clone()),
                 _ => None,
             })
-            .ok_or(LoxError::MissingIdentifier(
-                declare_token.position().clone(),
-            ))?
+            .ok_or(LoxError::MissingIdentifier(declare_pos.clone()))?
             .take();
 
         let expr = if self
@@ -114,17 +108,15 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
 
         Ok(PositionTagged::new_from_to(
             Statement::VarDeclaration(name, expr),
-            declare_token.position().clone(),
+            declare_pos,
             semi_pos,
         ))
     }
 
     fn statement(&mut self) -> LoxResult<PositionTagged<Statement>> {
         match self.peek().map(|t| t.value()) {
-            Some(Token::Print) => {
-                self.advance();
-                self.print_statement()
-            }
+            Some(Token::Print) => self.print_statement(),
+            Some(Token::LeftBrace) => self.block(),
             _ => self.expression_statement(),
         }
     }
@@ -141,14 +133,36 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
     }
 
     fn print_statement(&mut self) -> LoxResult<PositionTagged<Statement>> {
-        let (expr, expr_pos) = self.expression()?.take();
+        let (_, print_pos) = self.match_exact_token(Token::Print)?;
+        let (expr, _) = self.expression()?.take();
         let (_, semi_pos) = self.match_exact_token(Token::Semicolon)?;
 
         Ok(PositionTagged::new_from_to(
             Statement::Print(expr),
-            expr_pos,
+            print_pos,
             semi_pos,
         ))
+    }
+
+    fn block(&mut self) -> LoxResult<PositionTagged<Statement>> {
+        let (_, open_pos) = self.match_exact_token(Token::LeftBrace)?;
+        let mut statements = Vec::new();
+
+        loop {
+            match self.peek().map(|v| v.value()) {
+                Some(Token::RightBrace) => {
+                    let (_, close_pos) = self.match_exact_token(Token::RightBrace)?;
+
+                    break Ok(PositionTagged::new_from_to(
+                        Statement::Block(statements),
+                        open_pos,
+                        close_pos,
+                    ));
+                }
+
+                _ => statements.push(self.declaration()?.take().0),
+            }
+        }
     }
 
     fn expression(&mut self) -> LoxResult<PositionTagged<Expression>> {

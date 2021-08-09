@@ -2,6 +2,23 @@
 
 print "hello " + (9/2);
 
+var outer = "outer";
+var inner = "outer";
+
+print "before outer: " + outer;
+print "before inner: " + inner;
+
+{
+    outer = "inner";
+    var inner = "inner";
+
+    print "inner outer: " + outer;
+    print "inner inner: " + inner;
+}
+
+print "outer outer: " + outer;
+print "outer inner: " + inner;
+
 //fun main() {
 //   print "the answer is " + 42.0;
 //}

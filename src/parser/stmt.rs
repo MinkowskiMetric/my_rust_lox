@@ -6,6 +6,7 @@ pub enum Statement {
     Expression(Expression),
     Print(Expression),
     VarDeclaration(String, Expression),
+    Block(Vec<Statement>),
 }
 
 pub trait StatementVisitor {
@@ -18,12 +19,14 @@ pub trait StatementVisitor {
             Statement::VarDeclaration(identifier, expr) => {
                 self.accept_var_declaration(identifier, expr)
             }
+            Statement::Block(statements) => self.accept_block(statements),
         }
     }
 
     fn accept_expression_statement(&mut self, expr: &Expression) -> Self::Return;
     fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return;
     fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return;
+    fn accept_block(&mut self, statements: &[Statement]) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -49,6 +52,15 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
 
     fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return {
         writeln!(self.f, "var {} = {};", identifier, expr)
+    }
+
+    fn accept_block(&mut self, statements: &[Statement]) -> Self::Return {
+        // TODOTODOTODO - indentation would be nice
+        writeln!(self.f, "{{")?;
+        for statement in statements {
+            writeln!(self.f, "{}", statement)?;
+        }
+        writeln!(self.f, "}}")
     }
 }
 
