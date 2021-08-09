@@ -7,6 +7,7 @@ pub enum Statement {
     Print(Expression),
     VarDeclaration(String, Expression),
     Block(Vec<Statement>),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
 }
 
 pub trait StatementVisitor {
@@ -20,6 +21,9 @@ pub trait StatementVisitor {
                 self.accept_var_declaration(identifier, expr)
             }
             Statement::Block(statements) => self.accept_block(statements),
+            Statement::If(condition, then_branch, else_branch) => {
+                self.accept_if(condition, then_branch, else_branch.as_deref())
+            }
         }
     }
 
@@ -27,6 +31,12 @@ pub trait StatementVisitor {
     fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return;
     fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return;
     fn accept_block(&mut self, statements: &[Statement]) -> Self::Return;
+    fn accept_if(
+        &mut self,
+        condition: &Expression,
+        then_branch: &Statement,
+        else_branch: Option<&Statement>,
+    ) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -61,6 +71,22 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
             writeln!(self.f, "{}", statement)?;
         }
         writeln!(self.f, "}}")
+    }
+
+    fn accept_if(
+        &mut self,
+        condition: &Expression,
+        then_branch: &Statement,
+        else_branch: Option<&Statement>,
+    ) -> Self::Return {
+        match else_branch {
+            Some(else_branch) => writeln!(
+                self.f,
+                "if ({}) {} else {}",
+                condition, then_branch, else_branch
+            ),
+            None => writeln!(self.f, "if ({}) {}", condition, then_branch),
+        }
     }
 }
 

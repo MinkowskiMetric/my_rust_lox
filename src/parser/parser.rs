@@ -117,6 +117,7 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
         match self.peek().map(|t| t.value()) {
             Some(Token::Print) => self.print_statement(),
             Some(Token::LeftBrace) => self.block(),
+            Some(Token::If) => self.if_statement(),
             _ => self.expression_statement(),
         }
     }
@@ -142,6 +143,39 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
             print_pos,
             semi_pos,
         ))
+    }
+
+    fn if_statement(&mut self) -> LoxResult<PositionTagged<Statement>> {
+        let (_, if_pos) = self.match_exact_token(Token::If)?;
+        self.match_exact_token(Token::LeftParen)?;
+
+        let (condition, _) = self.expression()?.take();
+        self.match_exact_token(Token::RightParen)?;
+
+        let (then_branch, then_branch_pos) = self.statement()?.take();
+
+        match self.peek().map(|v| v.value()) {
+            Some(Token::Else) => {
+                self.match_exact_token(Token::Else)?;
+                let (else_branch, else_branch_pos) = self.statement()?.take();
+
+                Ok(PositionTagged::new_from_to(
+                    Statement::If(
+                        condition,
+                        Box::new(then_branch),
+                        Some(Box::new(else_branch)),
+                    ),
+                    if_pos,
+                    else_branch_pos,
+                ))
+            }
+
+            _ => Ok(PositionTagged::new_from_to(
+                Statement::If(condition, Box::new(then_branch), None),
+                if_pos,
+                then_branch_pos,
+            )),
+        }
     }
 
     fn block(&mut self) -> LoxResult<PositionTagged<Statement>> {

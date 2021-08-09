@@ -240,6 +240,21 @@ impl StatementVisitor for Interpreter {
             Ok(())
         })
     }
+
+    fn accept_if(
+        &mut self,
+        condition: &Expression,
+        then_branch: &Statement,
+        else_branch: Option<&Statement>,
+    ) -> Self::Return {
+        let condition: bool = self.accept_expression(condition)?.into();
+
+        match (condition, else_branch) {
+            (true, _) => self.accept_statement(then_branch),
+            (false, Some(else_branch)) => self.accept_statement(else_branch),
+            (false, None) => Ok(()),
+        }
+    }
 }
 
 pub fn interpret<'a>(

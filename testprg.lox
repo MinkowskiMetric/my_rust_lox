@@ -8,16 +8,25 @@ var inner = "outer";
 print "before outer: " + outer;
 print "before inner: " + inner;
 
+if (outer == inner) print "match"; else print "no-match";
+
 {
     outer = "inner";
     var inner = "inner";
 
     print "inner outer: " + outer;
     print "inner inner: " + inner;
+
+    if (outer == inner) print "match"; else print "no-match";
 }
 
 print "outer outer: " + outer;
 print "outer inner: " + inner;
+
+if (outer == inner) print "match"; else print "no-match";
+if (outer == inner) print "DOESN'T PRINT"; 
+
+print "now it's finished";
 
 //fun main() {
 //   print "the answer is " + 42.0;
