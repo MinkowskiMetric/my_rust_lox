@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, Expression, ExpressionVisitor, LoxError, LoxResult, PositionTagged, Statement,
-    StatementVisitor, UnaryOp, Value,
+    BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, LoxError, LoxResult, PositionTagged,
+    Statement, StatementVisitor, UnaryOp, Value,
 };
 use std::{collections::HashMap, convert::TryFrom};
 
@@ -186,6 +186,25 @@ impl ExpressionVisitor for Interpreter {
                     (f64::try_from(left)? + f64::try_from(self.accept_expression(right)?)?).into(),
                 ),
             },
+        }
+    }
+
+    fn accept_logical_binary(
+        &mut self,
+        left: &Expression,
+        operator: &LogicalBinaryOp,
+        right: &Expression,
+    ) -> Self::Return {
+        let left = self.accept_expression(left)?;
+
+        match (bool::from(left.clone()), operator) {
+            // For an and, if the operand on the left is truthy, evaluate the right
+            // For an or, if the operant on the left is falsy, evaluate the right
+            (true, LogicalBinaryOp::And) | (false, LogicalBinaryOp::Or) => {
+                self.accept_expression(right)
+            }
+
+            _ => Ok(left),
         }
     }
 

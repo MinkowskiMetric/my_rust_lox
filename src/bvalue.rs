@@ -1,4 +1,4 @@
-use crate::{LoxError, LoxResult, Nil};
+use crate::{LoxError, Nil};
 use core::{convert::TryFrom, fmt};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -186,6 +186,7 @@ impl TryFrom<BValue> for f64 {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::LoxResult;
     use std::convert::TryInto;
 
     fn check_invalid_type<T>(value: BValue, expected: BValueType, result: LoxResult<T>) -> bool {

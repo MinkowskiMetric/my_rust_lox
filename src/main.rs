@@ -14,7 +14,8 @@ pub use error::{LoxError, LoxResult};
 pub use interpreter::{interpret, Interpreter};
 pub use lexer::{tokenize, tokenize_file, Token};
 pub use parser::{
-    parse, BinaryOp, Expression, ExpressionVisitor, Parser, Statement, StatementVisitor, UnaryOp,
+    parse, BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, Parser, Statement,
+    StatementVisitor, UnaryOp,
 };
 pub use position::{tag_position, FilePos, Position, PositionTagged};
 pub use value::{Nil, Value};
@@ -68,7 +69,7 @@ fn run_file(input_file: &str) -> LoxResult<()> {
 
 fn main() {
     let settings = settings::Settings::parse_cmd_line();
-    let result = if settings.interactive {
+    if settings.interactive {
         run_interactive();
     } else {
         if let Err(err) = run_file(&settings.input_file) {

@@ -1,6 +1,7 @@
 use super::Expression;
 use crate::{
-    BinaryOp, LoxError, LoxResult, Nil, Position, PositionTagged, Statement, Token, UnaryOp, Value,
+    BinaryOp, LogicalBinaryOp, LoxError, LoxResult, Nil, Position, PositionTagged, Statement,
+    Token, UnaryOp, Value,
 };
 use std::iter::Peekable;
 
@@ -10,6 +11,22 @@ pub struct Parser<Iter: Iterator<Item = PositionTagged<Token>>> {
 
 macro_rules! binary_expression {
     ($prsr:ident.match_binary_expression($next:ident) { $(Token::$token:ident => BinaryOp::$op:ident,)+ }) => {
+        binary_expression! {
+            $prsr.match_internal_binary_expression(Binary, $next) {
+                $(Token::$token => BinaryOp::$op,)+
+            }
+        }
+    };
+
+    ($prsr:ident.match_logical_binary_expression($next:ident) { $(Token::$token:ident => LogicalBinaryOp::$op:ident,)+ }) => {
+        binary_expression! {
+            $prsr.match_internal_binary_expression(LogicalBinary, $next) {
+                $(Token::$token => LogicalBinaryOp::$op,)+
+            }
+        }
+    };
+
+    ($prsr:ident.match_internal_binary_expression($expr:ident, $next:ident) { $(Token::$token:ident => $op_type:ident::$op:ident,)+ }) => {
         let mut left = $prsr.$next()?;
 
         loop {
@@ -22,7 +39,7 @@ macro_rules! binary_expression {
                     let (right_expr, right_expr_pos) = $prsr.$next()?.take();
 
                     left = PositionTagged::new(
-                        Expression::Binary(Box::new(left_expr), BinaryOp::$op, Box::new(right_expr)),
+                        Expression::$expr(Box::new(left_expr), $op_type::$op, Box::new(right_expr)),
                         Position::new(
                             left_expr_pos.file_name().clone(),
                             *left_expr_pos.start(),
@@ -210,12 +227,12 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
     }
 
     fn assignment(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        let (expr, expr_pos) = self.equality()?.take();
+        let (expr, expr_pos) = self.logic_or()?.take();
 
         match &expr {
             Expression::VariableGet(name) => match self.peek().map(|t| t.value()) {
                 Some(Token::Equal) => {
-                    let (_, equal_pos) = self.advance().expect("no value").take();
+                    self.match_exact_token(Token::Equal)?;
                     let (value, value_pos) = self.assignment()?.take();
 
                     Ok(PositionTagged::new_from_to(
@@ -232,6 +249,18 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
         }
     }
 
+    fn logic_or(&mut self) -> LoxResult<PositionTagged<Expression>> {
+        binary_expression! { self.match_logical_binary_expression(logic_and) {
+            Token::Or => LogicalBinaryOp::Or,
+        } }
+    }
+
+    fn logic_and(&mut self) -> LoxResult<PositionTagged<Expression>> {
+        binary_expression! { self.match_logical_binary_expression(equality) {
+            Token::And => LogicalBinaryOp::And,
+        } }
+    }
+
     fn equality(&mut self) -> LoxResult<PositionTagged<Expression>> {
         binary_expression! { self.match_binary_expression(ternary) {
             Token::EqualEqual => BinaryOp::EqualEqual,
@@ -240,7 +269,7 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
     }
 
     fn ternary(&mut self) -> LoxResult<PositionTagged<Expression>> {
-        let (mut comparison_expr, comparison_pos) = self.comparison()?.take();
+        let (comparison_expr, comparison_pos) = self.comparison()?.take();
 
         if let Some(Token::QuestionMark) = self.peek().map(|t| t.value()) {
             self.advance();

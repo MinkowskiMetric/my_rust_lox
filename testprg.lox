@@ -23,8 +23,13 @@ if (outer == inner) print "match"; else print "no-match";
 print "outer outer: " + outer;
 print "outer inner: " + inner;
 
-if (outer == inner) print "match"; else print "no-match";
+if (outer == inner and false) print "match"; else print "no-match";
 if (outer == inner) print "DOESN'T PRINT"; 
+
+print "Should be 'hello': " + (true and "hello");
+print "Should be false: " + (false and "hello");
+print "Should be true: " + (true or "hello");
+print "Should be 'hello': " + (false or "hello");
 
 print "now it's finished";
 

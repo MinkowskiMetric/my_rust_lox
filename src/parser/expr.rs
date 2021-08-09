@@ -50,11 +50,27 @@ impl fmt::Display for BinaryOp {
 }
 
 #[derive(Debug, Clone)]
+pub enum LogicalBinaryOp {
+    And,
+    Or,
+}
+
+impl fmt::Display for LogicalBinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(match self {
+            Self::And => "and",
+            Self::Or => "or",
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Value),
     Unary(UnaryOp, Box<Expression>),
     Grouping(Box<Expression>),
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
+    LogicalBinary(Box<Expression>, LogicalBinaryOp, Box<Expression>),
     Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
     VariableGet(String),
     Assignment(String, Box<Expression>),
@@ -69,6 +85,9 @@ pub trait ExpressionVisitor {
             Expression::Unary(operator, expr) => self.accept_unary(operator, expr),
             Expression::Grouping(expr) => self.accept_grouping(expr),
             Expression::Binary(left, operator, right) => self.accept_binary(left, operator, right),
+            Expression::LogicalBinary(left, operator, right) => {
+                self.accept_logical_binary(left, operator, right)
+            }
             Expression::Ternary(comparison, true_val, false_val) => {
                 self.accept_ternary(comparison, true_val, false_val)
             }
@@ -83,6 +102,12 @@ pub trait ExpressionVisitor {
         &mut self,
         left: &Expression,
         op: &BinaryOp,
+        right: &Expression,
+    ) -> Self::Return;
+    fn accept_logical_binary(
+        &mut self,
+        left: &Expression,
+        op: &LogicalBinaryOp,
         right: &Expression,
     ) -> Self::Return;
     fn accept_ternary(
@@ -128,6 +153,15 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
         &mut self,
         left: &Expression,
         operator: &BinaryOp,
+        right: &Expression,
+    ) -> Self::Return {
+        write!(self.f, "({} {} {})", left, operator, right)
+    }
+
+    fn accept_logical_binary(
+        &mut self,
+        left: &Expression,
+        operator: &LogicalBinaryOp,
         right: &Expression,
     ) -> Self::Return {
         write!(self.f, "({} {} {})", left, operator, right)
