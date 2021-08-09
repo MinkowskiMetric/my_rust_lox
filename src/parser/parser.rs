@@ -135,6 +135,8 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
             Some(Token::Print) => self.print_statement(),
             Some(Token::LeftBrace) => self.block(),
             Some(Token::If) => self.if_statement(),
+            Some(Token::While) => self.while_statement(),
+            Some(Token::For) => self.for_statement(),
             _ => self.expression_statement(),
         }
     }
@@ -214,6 +216,73 @@ impl<Iter: Iterator<Item = PositionTagged<Token>>> Parser<Iter> {
                 _ => statements.push(self.declaration()?.take().0),
             }
         }
+    }
+
+    fn while_statement(&mut self) -> LoxResult<PositionTagged<Statement>> {
+        let (_, start_pos) = self.match_exact_token(Token::While)?;
+        self.match_exact_token(Token::LeftParen)?;
+
+        let (condition, _) = self.expression()?.take();
+        self.match_exact_token(Token::RightParen)?;
+
+        let (body, end_pos) = self.statement()?.take();
+
+        Ok(PositionTagged::new_from_to(
+            Statement::While(condition, Box::new(body)),
+            start_pos,
+            end_pos,
+        ))
+    }
+
+    fn for_statement(&mut self) -> LoxResult<PositionTagged<Statement>> {
+        let (_, start_pos) = self.match_exact_token(Token::For)?;
+        self.match_exact_token(Token::LeftParen)?;
+
+        let initializer = match self.peek().map(|v| v.value()) {
+            Some(Token::Semicolon) => {
+                self.match_exact_token(Token::Semicolon)?;
+                None
+            } // No initializer
+            Some(Token::Var) => Some(self.var_declaration()?.take().0),
+            _ => Some(self.expression_statement()?.take().0),
+        };
+
+        let condition = match self.peek().map(|v| v.value()) {
+            Some(Token::Semicolon) => None,
+            _ => Some(self.expression()?.take().0),
+        };
+        self.match_exact_token(Token::Semicolon)?;
+
+        // If there is no condition, we behave as if it is true.
+        let condition = condition.unwrap_or_else(|| Expression::Literal(Value::from(true)));
+
+        let increment = match self.peek().map(|v| v.value()) {
+            Some(Token::RightParen) => None,
+            _ => Some(self.expression()?.take().0),
+        };
+        self.match_exact_token(Token::RightParen)?;
+
+        let (body, body_pos) = self.statement()?.take();
+
+        // If we have an increment expression, then we need to combine it with the increment
+        let body = if let Some(increment) = increment {
+            Statement::Block(vec![body, Statement::Expression(increment)])
+        } else {
+            body
+        };
+
+        Ok(PositionTagged::new_from_to(
+            if let Some(initializer) = initializer {
+                Statement::Block(vec![
+                    initializer,
+                    Statement::While(condition, Box::new(body)),
+                ])
+            } else {
+                Statement::While(condition, Box::new(body))
+            },
+            start_pos,
+            body_pos,
+        ))
     }
 
     fn expression(&mut self) -> LoxResult<PositionTagged<Expression>> {

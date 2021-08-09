@@ -8,6 +8,7 @@ pub enum Statement {
     VarDeclaration(String, Expression),
     Block(Vec<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
+    While(Expression, Box<Statement>),
 }
 
 pub trait StatementVisitor {
@@ -24,6 +25,7 @@ pub trait StatementVisitor {
             Statement::If(condition, then_branch, else_branch) => {
                 self.accept_if(condition, then_branch, else_branch.as_deref())
             }
+            Statement::While(expression, body) => self.accept_while(expression, body),
         }
     }
 
@@ -37,6 +39,7 @@ pub trait StatementVisitor {
         then_branch: &Statement,
         else_branch: Option<&Statement>,
     ) -> Self::Return;
+    fn accept_while(&mut self, condition: &Expression, body: &Statement) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -87,6 +90,10 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
             ),
             None => writeln!(self.f, "if ({}) {}", condition, then_branch),
         }
+    }
+
+    fn accept_while(&mut self, condition: &Expression, body: &Statement) -> Self::Return {
+        writeln!(self.f, "while ({}) {}", condition, body)
     }
 }
 

@@ -274,6 +274,16 @@ impl StatementVisitor for Interpreter {
             (false, None) => Ok(()),
         }
     }
+
+    fn accept_while(&mut self, condition: &Expression, body: &Statement) -> Self::Return {
+        loop {
+            if !bool::from(self.accept_expression(condition)?) {
+                return Ok(());
+            } else {
+                self.accept_statement(body)?;
+            }
+        }
+    }
 }
 
 pub fn interpret<'a>(
