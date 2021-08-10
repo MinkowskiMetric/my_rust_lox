@@ -11,7 +11,7 @@ mod settings;
 mod value;
 
 pub use bvalue::{BValue, BValueType};
-pub use callable::Callable;
+pub use callable::{make_native_function, Callable, CallableReference};
 pub use error::{LoxError, LoxResult};
 pub use interpreter::{interpret, Interpreter};
 pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};

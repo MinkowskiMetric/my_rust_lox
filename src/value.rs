@@ -1,4 +1,4 @@
-use crate::{BValue, Callable, LoxError};
+use crate::{BValue, Callable, CallableReference, LoxError};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
@@ -98,6 +98,12 @@ impl From<String> for Value {
     }
 }
 
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Self::String(s.to_string())
+    }
+}
+
 impl TryFrom<Value> for String {
     type Error = LoxError;
 
@@ -116,6 +122,23 @@ impl<'a> TryFrom<&'a Value> for &'a str {
         match v {
             Value::String(s) => Ok(s),
             v => Err(LoxError::ValueError(v.clone(), "string".into())),
+        }
+    }
+}
+
+impl<T: 'static + Callable> From<T> for Value {
+    fn from(t: T) -> Self {
+        Self::Callable(CallableHolder(Rc::new(t)))
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for CallableReference<'a> {
+    type Error = LoxError;
+
+    fn try_from(v: &'a Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Callable(c) => Ok(c.0.as_ref()),
+            v => Err(LoxError::ValueError(v.clone(), "callable".into())),
         }
     }
 }

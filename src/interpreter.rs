@@ -1,23 +1,43 @@
 use crate::{
-    BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, LoxError, LoxResult, Position,
-    Statement, StatementVisitor, UnaryOp, Value,
+    make_native_function, BinaryOp, CallableReference, Expression, ExpressionVisitor,
+    LogicalBinaryOp, LoxError, LoxResult, Position, Statement, StatementVisitor, UnaryOp, Value,
 };
-use std::{collections::HashMap, convert::TryFrom};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
+    convert::TryFrom,
+    rc::Rc,
+};
 
+// The way the book does scope nesting doesn't work, because the borrow checker hates it. This makes sense since
+// we're trying to keep a mutable reference to the global object, as well as
 struct Enviroment {
-    enclosing: Option<Box<Self>>,
+    enclosing: Option<Rc<RefCell<Self>>>,
     variables: HashMap<String, Value>,
 }
 
+fn add_two_numbers(_interpreter: &mut Interpreter, arguments: &[Value]) -> LoxResult<Value> {
+    Ok(Value::from(
+        f64::try_from(arguments[0].clone())? + f64::try_from(arguments[1].clone())?,
+    ))
+}
+
 impl Enviroment {
-    fn new(enclosing: Option<Box<Self>>) -> Self {
+    fn new_global() -> Self {
         Self {
-            enclosing,
+            enclosing: None,
             variables: HashMap::new(),
         }
     }
 
-    pub fn discard(mut self) -> Option<Box<Self>> {
+    fn new_child(enclosing: Option<Rc<RefCell<Self>>>) -> Self {
+        Self {
+            enclosing: enclosing,
+            variables: HashMap::new(),
+        }
+    }
+
+    pub fn discard(&mut self) -> Option<Rc<RefCell<Self>>> {
         self.enclosing.take()
     }
 
@@ -26,21 +46,24 @@ impl Enviroment {
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> LoxResult<&Value> {
+    pub fn get(&self, name: &str) -> LoxResult<Value> {
         match self.variables.get(name) {
-            Some(v) => Ok(v),
+            Some(v) => Ok(v.clone()),
             None => match &self.enclosing {
-                Some(enclosing) => enclosing.get(name),
+                Some(enclosing) => enclosing.borrow().get(name),
                 None => Err(LoxError::UnknownVariable(name.to_string())),
             },
         }
     }
 
-    pub fn get_mut(&mut self, name: &str) -> LoxResult<&mut Value> {
+    pub fn set(&mut self, name: &str, value: Value) -> LoxResult<()> {
         match self.variables.get_mut(name) {
-            Some(v) => Ok(v),
+            Some(v) => {
+                *v = value;
+                Ok(())
+            }
             None => match self.enclosing.as_mut() {
-                Some(enclosing) => enclosing.get_mut(name),
+                Some(enclosing) => enclosing.borrow_mut().set(name, value),
                 None => Err(LoxError::UnknownVariable(name.to_string())),
             },
         }
@@ -48,13 +71,25 @@ impl Enviroment {
 }
 
 pub struct Interpreter {
-    env: Option<Box<Enviroment>>,
+    _global_env: Rc<RefCell<Enviroment>>,
+    env: Option<Rc<RefCell<Enviroment>>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut global_env = Enviroment::new_global();
+
+        global_env
+            .declare("add_two_numbers", make_native_function(2, add_two_numbers))
+            .expect("Can't fail");
+
+        // The initial environment is the same as the global environment
+        let global_env = Rc::new(RefCell::new(global_env));
+        let env = Some(global_env.clone());
+
         Self {
-            env: Some(Box::new(Enviroment::new(None))),
+            _global_env: global_env,
+            env,
         }
     }
 
@@ -69,15 +104,17 @@ impl Interpreter {
         Ok(())
     }
 
-    fn get_env(&self) -> &Enviroment {
+    fn get_env<'a>(&'a self) -> Ref<'a, Enviroment> {
         self.env
             .as_ref()
+            .and_then(|r| r.try_borrow().ok())
             .expect("Interpreter environment is inconsistent")
     }
 
-    fn get_env_mut(&mut self) -> &mut Enviroment {
+    fn get_env_mut<'a>(&'a mut self) -> RefMut<'a, Enviroment> {
         self.env
             .as_mut()
+            .and_then(|r| r.try_borrow_mut().ok())
             .expect("Interpreter environment is inconsistent")
     }
 
@@ -86,16 +123,15 @@ impl Interpreter {
     }
 
     fn get_variable(&self, name: &str) -> LoxResult<Value> {
-        Ok(self.get_env().get(name)?.clone())
+        self.get_env().get(name)
     }
 
     fn set_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
-        *self.get_env_mut().get_mut(name)? = value;
-        Ok(())
+        self.get_env_mut().set(name, value)
     }
 
     fn push_environment(&mut self) {
-        let new_environment = Box::new(Enviroment::new(self.env.take()));
+        let new_environment = Rc::new(RefCell::new(Enviroment::new_child(self.env.take())));
         self.env.replace(new_environment);
     }
 
@@ -103,9 +139,9 @@ impl Interpreter {
         let outer_environment = self
             .env
             .take()
-            .expect("Interpreter environment is inconsistent")
-            .discard();
-        self.env = outer_environment;
+            .expect("Interpreter environment is inconsistent");
+
+        self.env = outer_environment.borrow_mut().discard();
     }
 
     fn run_in_nested_environment<R, F: FnOnce(&mut Self) -> R>(&mut self, f: F) -> R {
@@ -251,7 +287,21 @@ impl ExpressionVisitor for Interpreter {
         callee: &Expression,
         arguments: &[Expression],
     ) -> Self::Return {
-        todo!("CALL {} with {:?}", callee, arguments)
+        let callee = self.accept_expression(callee)?;
+        match CallableReference::try_from(&callee) {
+            Ok(callee) => {
+                if callee.arity() == arguments.len() {
+                    let arguments = arguments
+                        .iter()
+                        .map(|a| self.accept_expression(a))
+                        .collect::<LoxResult<Vec<_>>>()?;
+                    callee.call(self, &arguments)
+                } else {
+                    todo!("This is a runtime error. How do we do those?");
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
