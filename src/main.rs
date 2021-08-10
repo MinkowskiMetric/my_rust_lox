@@ -26,14 +26,14 @@ fn print_error(error: LoxError) {
     println!("Error: {}", error);
 }
 
-fn run_interactive() {
+fn run_interactive() -> LoxResult<()> {
     loop {
         let mut parse_data = String::new();
-        let mut interpreter = Interpreter::new();
-        loop {
+        let mut interpreter = Interpreter::new()?;
+        let result = loop {
             let mut line = String::new();
             if io::stdin().read_line(&mut line).is_err() {
-                break;
+                break Ok(());
             }
 
             parse_data.push_str(&line);
@@ -43,8 +43,7 @@ fn run_interactive() {
             match statements {
                 Err(LoxError::IncompleteExpression(_)) => continue, // Get the next line
                 Err(err) => {
-                    print_error(err);
-                    break;
+                    break Err(err);
                 }
 
                 Ok(statements) => {
@@ -53,12 +52,15 @@ fn run_interactive() {
                     match interpreter.accept_statements(statements.iter()) {
                         Ok(_) => (),
                         Err(err) => {
-                            print_error(err);
-                            break;
+                            break Err(err);
                         }
                     };
                 }
             }
+        };
+
+        if let Err(err) = result {
+            print_error(err);
         }
     }
 }
@@ -71,11 +73,13 @@ fn run_file(input_file: &str) -> LoxResult<()> {
 
 fn main() {
     let settings = settings::Settings::parse_cmd_line();
-    if settings.interactive {
-        run_interactive();
+    let result = if settings.interactive {
+        run_interactive()
     } else {
-        if let Err(err) = run_file(&settings.input_file) {
-            print_error(err);
-        }
+        run_file(&settings.input_file)
     };
+
+    if let Err(err) = result {
+        print_error(err);
+    }
 }

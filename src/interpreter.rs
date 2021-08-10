@@ -71,26 +71,36 @@ impl Enviroment {
 }
 
 pub struct Interpreter {
-    _global_env: Rc<RefCell<Enviroment>>,
+    global_env: Rc<RefCell<Enviroment>>,
     env: Option<Rc<RefCell<Enviroment>>>,
 }
 
 impl Interpreter {
-    pub fn new() -> Self {
-        let mut global_env = Enviroment::new_global();
-
-        global_env
-            .declare("add_two_numbers", make_native_function(2, add_two_numbers))
-            .expect("Can't fail");
+    pub fn new() -> LoxResult<Self> {
+        let global_env = Enviroment::new_global();
 
         // The initial environment is the same as the global environment
         let global_env = Rc::new(RefCell::new(global_env));
         let env = Some(global_env.clone());
 
-        Self {
-            _global_env: global_env,
+        let mut ret = Self {
+            global_env: global_env,
             env,
-        }
+        };
+
+        ret.initialize_globals()?;
+
+        Ok(ret)
+    }
+
+    fn initialize_globals(&mut self) -> LoxResult<()> {
+        self.declare_global("add_two_numbers", make_native_function(2, add_two_numbers))?;
+
+        Ok(())
+    }
+
+    pub fn declare_global(&mut self, name: &str, value: Value) -> LoxResult<()> {
+        self.global_env.borrow_mut().declare(name, value)
     }
 
     pub fn accept_statements<'a>(
@@ -376,5 +386,5 @@ impl StatementVisitor for Interpreter {
 }
 
 pub fn interpret<'a>(stmts: impl IntoIterator<Item = &'a Statement>) -> LoxResult<()> {
-    Interpreter::new().accept_statements(stmts)
+    Interpreter::new()?.accept_statements(stmts)
 }
