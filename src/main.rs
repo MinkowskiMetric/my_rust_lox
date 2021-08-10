@@ -1,6 +1,7 @@
 use std::io;
 
 mod bvalue;
+mod callable;
 mod error;
 mod interpreter;
 mod lexer;
@@ -10,9 +11,10 @@ mod settings;
 mod value;
 
 pub use bvalue::{BValue, BValueType};
+pub use callable::Callable;
 pub use error::{LoxError, LoxResult};
 pub use interpreter::{interpret, Interpreter};
-pub use lexer::{tokenize, tokenize_file, Token};
+pub use lexer::{tokenize, tokenize_file, SimpleToken, Token};
 pub use parser::{
     parse, BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, Parser, Statement,
     StatementVisitor, UnaryOp,

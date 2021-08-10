@@ -134,6 +134,8 @@ impl ExpressionVisitor for Interpreter {
                 let num_val = f64::try_from(self.accept_expression(expr)?)?;
                 Ok((-num_val).into())
             }
+
+            UnaryOp::Grouping => self.accept_expression(expr),
         }
     }
 
@@ -228,6 +230,10 @@ impl ExpressionVisitor for Interpreter {
     fn accept_assignment(&mut self, name: &str, value: &Expression) -> Self::Return {
         let value = self.accept_expression(value)?;
         self.set_variable(name, value.clone()).map(|_| value)
+    }
+
+    fn accept_call(&mut self, callee: &Expression, arguments: &[Expression]) -> Self::Return {
+        todo!("CALL {} with {:?}", callee, arguments)
     }
 }
 

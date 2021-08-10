@@ -2,7 +2,8 @@ use crate::Value;
 use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+#[repr(u8)]
+pub enum SimpleToken {
     LeftParen,
     RightParen,
     LeftBrace,
@@ -24,65 +25,83 @@ pub enum Token {
     Slash,
     QuestionMark,
     Colon,
-    Literal(Value),
-    Identifier(String),
     And,
     Class,
     Else,
+    False,
     For,
     Fun,
     If,
+    Nil,
     Or,
     Print,
     Return,
     Super,
     This,
+    True,
     Var,
     While,
     EndOfFile,
 }
 
-impl<'a> fmt::Display for Token {
+impl fmt::Display for SimpleToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(match self {
+            Self::LeftParen => "(",
+            Self::RightParen => ")",
+            Self::LeftBrace => "{{",
+            Self::RightBrace => "}}",
+            Self::Comma => ",",
+            Self::Dot => ".",
+            Self::Minus => "-",
+            Self::Plus => "+",
+            Self::Semicolon => ";",
+            Self::Star => "*",
+            Self::Bang => "!",
+            Self::BangEqual => "!=",
+            Self::Equal => "=",
+            Self::EqualEqual => "==",
+            Self::Less => "<",
+            Self::LessEqual => "<=",
+            Self::Greater => ">",
+            Self::GreaterEqual => ">=",
+            Self::Slash => "/",
+            Self::QuestionMark => "?",
+            Self::Colon => ":",
+            Self::And => "and",
+            Self::Class => "class",
+            Self::Else => "else",
+            Self::False => "false",
+            Self::For => "for",
+            Self::Fun => "fun",
+            Self::If => "if",
+            Self::Nil => "nil",
+            Self::Or => "or",
+            Self::Print => "print",
+            Self::Return => "return",
+            Self::Super => "super",
+            Self::This => "this",
+            Self::True => "true",
+            Self::Var => "var",
+            Self::While => "while",
+            Self::EndOfFile => "<EOF>",
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Token {
+    Simple(SimpleToken),
+    Literal(Value),
+    Identifier(String),
+}
+
+impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
-            Self::LeftParen => write!(f, "("),
-            Self::RightParen => write!(f, ")"),
-            Self::LeftBrace => write!(f, "{{"),
-            Self::RightBrace => write!(f, "}}"),
-            Self::Comma => write!(f, ","),
-            Self::Dot => write!(f, "."),
-            Self::Minus => write!(f, "-"),
-            Self::Plus => write!(f, "+"),
-            Self::Semicolon => write!(f, ";"),
-            Self::Star => write!(f, "*"),
-            Self::Bang => write!(f, "!"),
-            Self::BangEqual => write!(f, "!="),
-            Self::Equal => write!(f, "="),
-            Self::EqualEqual => write!(f, "=="),
-            Self::Less => write!(f, "<"),
-            Self::LessEqual => write!(f, "<="),
-            Self::Greater => write!(f, ">"),
-            Self::GreaterEqual => write!(f, ">="),
-            Self::Slash => write!(f, "/"),
-            Self::QuestionMark => write!(f, "?"),
-            Self::Colon => write!(f, ":"),
-            Self::And => write!(f, "and"),
-            Self::Class => write!(f, "class"),
-            Self::Else => write!(f, "else"),
-            Self::For => write!(f, "for"),
-            Self::Fun => write!(f, "fun"),
-            Self::If => write!(f, "if"),
-            Self::Or => write!(f, "or"),
-            Self::Print => write!(f, "print"),
-            Self::Return => write!(f, "return"),
-            Self::Super => write!(f, "super"),
-            Self::This => write!(f, "this"),
-            Self::Var => write!(f, "var"),
-            Self::While => write!(f, "while"),
-            Self::EndOfFile => Ok(()),
-
-            Self::Literal(val) => write!(f, "{}", val),
-            Self::Identifier(id) => write!(f, "{}", id),
+            Self::Simple(simple_token) => simple_token.fmt(f),
+            Self::Literal(val) => val.fmt(f),
+            Self::Identifier(id) => id.fmt(f),
         }
     }
 }

@@ -5,6 +5,7 @@ use std::fmt;
 pub enum UnaryOp {
     Minus,
     Bang,
+    Grouping,
 }
 
 impl fmt::Display for UnaryOp {
@@ -12,6 +13,7 @@ impl fmt::Display for UnaryOp {
         match self {
             UnaryOp::Minus => write!(f, "-"),
             UnaryOp::Bang => write!(f, "!"),
+            UnaryOp::Grouping => write!(f, "<GROUP>"),
         }
     }
 }
@@ -68,12 +70,12 @@ impl fmt::Display for LogicalBinaryOp {
 pub enum Expression {
     Literal(Value),
     Unary(UnaryOp, Box<Expression>),
-    Grouping(Box<Expression>),
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
     LogicalBinary(Box<Expression>, LogicalBinaryOp, Box<Expression>),
     Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
     VariableGet(String),
     Assignment(String, Box<Expression>),
+    Call(Box<Expression>, Vec<Expression>),
 }
 
 pub trait ExpressionVisitor {
@@ -83,7 +85,6 @@ pub trait ExpressionVisitor {
         match expr {
             Expression::Literal(value) => self.accept_literal(value),
             Expression::Unary(operator, expr) => self.accept_unary(operator, expr),
-            Expression::Grouping(expr) => self.accept_grouping(expr),
             Expression::Binary(left, operator, right) => self.accept_binary(left, operator, right),
             Expression::LogicalBinary(left, operator, right) => {
                 self.accept_logical_binary(left, operator, right)
@@ -93,6 +94,7 @@ pub trait ExpressionVisitor {
             }
             Expression::VariableGet(identifier) => self.accept_variable_get(identifier),
             Expression::Assignment(identifier, value) => self.accept_assignment(identifier, value),
+            Expression::Call(callee, arguments) => self.accept_call(callee, arguments),
         }
     }
 
@@ -118,11 +120,7 @@ pub trait ExpressionVisitor {
     ) -> Self::Return;
     fn accept_variable_get(&mut self, name: &str) -> Self::Return;
     fn accept_assignment(&mut self, name: &str, value: &Expression) -> Self::Return;
-
-    // This might not be the best idea, but most of the time you don't care about these
-    fn accept_grouping(&mut self, expr: &Expression) -> Self::Return {
-        self.accept_expression(expr)
-    }
+    fn accept_call(&mut self, callee: &Expression, arguments: &[Expression]) -> Self::Return;
 }
 
 struct ExpressionPrinter<'a, 'b> {
@@ -176,16 +174,22 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
         write!(self.f, "({} ? {} : {})", comparison, true_val, false_val)
     }
 
-    fn accept_grouping(&mut self, expr: &Expression) -> Self::Return {
-        write!(self.f, "({})", expr)
-    }
-
     fn accept_variable_get(&mut self, name: &str) -> Self::Return {
         self.f.write_str(name)
     }
 
     fn accept_assignment(&mut self, name: &str, value: &Expression) -> Self::Return {
         write!(self.f, "({} = {})", name, value)
+    }
+
+    fn accept_call(&mut self, callee: &Expression, arguments: &[Expression]) -> Self::Return {
+        write!(self.f, "({})( ", callee)?;
+
+        for argument in arguments {
+            write!(self.f, "{},", argument)?;
+        }
+
+        write!(self.f, " )")
     }
 }
 

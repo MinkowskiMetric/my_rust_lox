@@ -1,16 +1,34 @@
-use crate::{BValue, LoxError};
+use crate::{BValue, Callable, LoxError};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
+    rc::Rc,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Nil;
+
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct CallableHolder(Rc<dyn Callable>);
+
+impl fmt::Display for CallableHolder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq<CallableHolder> for CallableHolder {
+    fn eq(&self, _rhs: &Self) -> bool {
+        todo!("I haven't implemented equality for callable yet - I probably can if I need to. This goes away when I get an object model and a garbage collector")
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     BValue(BValue),
     String(String),
+    Callable(CallableHolder),
 }
 
 impl fmt::Display for Value {
@@ -18,6 +36,7 @@ impl fmt::Display for Value {
         match self {
             Value::BValue(val) => val.fmt(f),
             Value::String(s) => write!(f, "{}", s),
+            Value::Callable(func) => write!(f, "{}", func),
         }
     }
 }

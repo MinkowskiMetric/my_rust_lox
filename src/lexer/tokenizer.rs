@@ -1,5 +1,5 @@
-use super::Token;
-use crate::{FilePos, LoxError, LoxResult, Nil, Position, PositionTagged, Value};
+use super::{SimpleToken, Token};
+use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged};
 use lazy_static::lazy_static;
 use maplit::hashmap;
 use std::{
@@ -11,23 +11,23 @@ use std::{
 };
 
 lazy_static! {
-    static ref KEYWORDS: HashMap<&'static str, Token> = hashmap! {
-        "and" => Token::And,
-        "class" => Token::Class,
-        "else" => Token::Else,
-        "false" => Token::Literal(Value::from(false)),
-        "for" => Token::For,
-        "fun" => Token::Fun,
-        "if" => Token::If,
-        "nil" => Token::Literal(Value::from(Nil)),
-        "or" => Token::Or,
-        "print" => Token::Print,
-        "return" => Token::Return,
-        "super" => Token::Super,
-        "this" => Token::This,
-        "true" => Token::Literal(Value::from(true)),
-        "var" => Token::Var,
-        "while" => Token::While,
+    static ref KEYWORDS: HashMap<&'static str, SimpleToken> = hashmap! {
+        "and" => SimpleToken::And,
+        "class" => SimpleToken::Class,
+        "else" => SimpleToken::Else,
+        "false" => SimpleToken::False,
+        "for" => SimpleToken::For,
+        "fun" => SimpleToken::Fun,
+        "if" => SimpleToken::If,
+        "nil" => SimpleToken::Nil,
+        "or" => SimpleToken::Or,
+        "print" => SimpleToken::Print,
+        "return" => SimpleToken::Return,
+        "super" => SimpleToken::Super,
+        "this" => SimpleToken::This,
+        "true" => SimpleToken::True,
+        "var" => SimpleToken::Var,
+        "while" => SimpleToken::While,
     };
 }
 
@@ -211,7 +211,7 @@ impl<'a> TokenReader<'a> {
 
     fn emit_identifier(&self, identifier: String) -> LoxResult<PositionTagged<Token>> {
         match KEYWORDS.get(&*identifier).cloned() {
-            Some(token) => self.emit_token(token),
+            Some(token) => self.emit_token(Token::Simple(token)),
             None => self.emit_token(Token::Identifier(identifier)),
         }
     }
@@ -240,36 +240,44 @@ impl<'a> Iterator for TokenReader<'a> {
             None => {
                 if !self.file_ended {
                     self.file_ended = true;
-                    Some(self.emit_token(Token::EndOfFile))
+                    Some(self.emit_token(Token::Simple(SimpleToken::EndOfFile)))
                 } else {
                     None
                 }
             }
 
             // Single characters are simple
-            Some('(') => Some(self.emit_token(Token::LeftParen)),
-            Some(')') => Some(self.emit_token(Token::RightParen)),
-            Some('{') => Some(self.emit_token(Token::LeftBrace)),
-            Some('}') => Some(self.emit_token(Token::RightBrace)),
-            Some(',') => Some(self.emit_token(Token::Comma)),
-            Some('.') => Some(self.emit_token(Token::Dot)),
-            Some('-') => Some(self.emit_token(Token::Minus)),
-            Some('+') => Some(self.emit_token(Token::Plus)),
-            Some(';') => Some(self.emit_token(Token::Semicolon)),
-            Some('*') => Some(self.emit_token(Token::Star)),
-            Some('/') => Some(self.emit_token(Token::Slash)),
-            Some('?') => Some(self.emit_token(Token::QuestionMark)),
-            Some(':') => Some(self.emit_token(Token::Colon)),
+            Some('(') => Some(self.emit_token(Token::Simple(SimpleToken::LeftParen))),
+            Some(')') => Some(self.emit_token(Token::Simple(SimpleToken::RightParen))),
+            Some('{') => Some(self.emit_token(Token::Simple(SimpleToken::LeftBrace))),
+            Some('}') => Some(self.emit_token(Token::Simple(SimpleToken::RightBrace))),
+            Some(',') => Some(self.emit_token(Token::Simple(SimpleToken::Comma))),
+            Some('.') => Some(self.emit_token(Token::Simple(SimpleToken::Dot))),
+            Some('-') => Some(self.emit_token(Token::Simple(SimpleToken::Minus))),
+            Some('+') => Some(self.emit_token(Token::Simple(SimpleToken::Plus))),
+            Some(';') => Some(self.emit_token(Token::Simple(SimpleToken::Semicolon))),
+            Some('*') => Some(self.emit_token(Token::Simple(SimpleToken::Star))),
+            Some('/') => Some(self.emit_token(Token::Simple(SimpleToken::Slash))),
+            Some('?') => Some(self.emit_token(Token::Simple(SimpleToken::QuestionMark))),
+            Some(':') => Some(self.emit_token(Token::Simple(SimpleToken::Colon))),
 
             // One or two character tokens
-            Some('!') if self.match_advance('=') => Some(self.emit_token(Token::BangEqual)),
-            Some('!') => Some(self.emit_token(Token::Bang)),
-            Some('=') if self.match_advance('=') => Some(self.emit_token(Token::EqualEqual)),
-            Some('=') => Some(self.emit_token(Token::Equal)),
-            Some('<') if self.match_advance('=') => Some(self.emit_token(Token::LessEqual)),
-            Some('<') => Some(self.emit_token(Token::Less)),
-            Some('>') if self.match_advance('=') => Some(self.emit_token(Token::GreaterEqual)),
-            Some('>') => Some(self.emit_token(Token::Greater)),
+            Some('!') if self.match_advance('=') => {
+                Some(self.emit_token(Token::Simple(SimpleToken::BangEqual)))
+            }
+            Some('!') => Some(self.emit_token(Token::Simple(SimpleToken::Bang))),
+            Some('=') if self.match_advance('=') => {
+                Some(self.emit_token(Token::Simple(SimpleToken::EqualEqual)))
+            }
+            Some('=') => Some(self.emit_token(Token::Simple(SimpleToken::Equal))),
+            Some('<') if self.match_advance('=') => {
+                Some(self.emit_token(Token::Simple(SimpleToken::LessEqual)))
+            }
+            Some('<') => Some(self.emit_token(Token::Simple(SimpleToken::Less))),
+            Some('>') if self.match_advance('=') => {
+                Some(self.emit_token(Token::Simple(SimpleToken::GreaterEqual)))
+            }
+            Some('>') => Some(self.emit_token(Token::Simple(SimpleToken::Greater))),
 
             Some('"') => Some(self.consume_string()),
 
@@ -395,7 +403,10 @@ mod test {
             );
         }
 
-        assert_eq!(*tokens[expected.len()].value(), Token::EndOfFile);
+        assert_eq!(
+            *tokens[expected.len()].value(),
+            Token::Simple(SimpleToken::EndOfFile)
+        );
     }
 
     fn assert_errors(tokens: &str, expected: &[SimpleErrorMatch]) {
@@ -423,27 +434,27 @@ mod test {
 
     #[test]
     fn test_single_token() {
-        assert_single_token("(", Token::LeftParen, 0, 1);
+        assert_single_token("(", Token::Simple(SimpleToken::LeftParen), 0, 1);
         assert_single_error("#", '#', 0, 1);
 
         assert_tokens(
             "\t( )!=!!>>=<<====/\"hello, world\"chimp012+",
             &[
-                SimpleTokenMatch::new(Token::LeftParen, 1, 2),
-                SimpleTokenMatch::new(Token::RightParen, 3, 4),
-                SimpleTokenMatch::new(Token::BangEqual, 4, 6),
-                SimpleTokenMatch::new(Token::Bang, 6, 7),
-                SimpleTokenMatch::new(Token::Bang, 7, 8),
-                SimpleTokenMatch::new(Token::Greater, 8, 9),
-                SimpleTokenMatch::new(Token::GreaterEqual, 9, 11),
-                SimpleTokenMatch::new(Token::Less, 11, 12),
-                SimpleTokenMatch::new(Token::LessEqual, 12, 14),
-                SimpleTokenMatch::new(Token::EqualEqual, 14, 16),
-                SimpleTokenMatch::new(Token::Equal, 16, 17),
-                SimpleTokenMatch::new(Token::Slash, 17, 18),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::LeftParen), 1, 2),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::RightParen), 3, 4),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::BangEqual), 4, 6),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::Bang), 6, 7),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::Bang), 7, 8),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::Greater), 8, 9),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::GreaterEqual), 9, 11),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::Less), 11, 12),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::LessEqual), 12, 14),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::EqualEqual), 14, 16),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::Equal), 16, 17),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::Slash), 17, 18),
                 SimpleTokenMatch::new(Token::Literal("hello, world".to_string().into()), 18, 32),
                 SimpleTokenMatch::new(Token::Identifier("chimp012".to_string().into()), 32, 40),
-                SimpleTokenMatch::new(Token::Plus, 40, 41),
+                SimpleTokenMatch::new(Token::Simple(SimpleToken::Plus), 40, 41),
             ],
         );
 
@@ -461,7 +472,7 @@ mod test {
         );
         assert_token_match(
             &tokenize("\n\n(", "boo", 0).expect("failed to parse")[0],
-            &Token::LeftParen,
+            &Token::Simple(SimpleToken::LeftParen),
             "boo",
             FilePos::new(2, 0),
             Some(FilePos::new(2, 1)),
@@ -469,7 +480,7 @@ mod test {
         assert_token_match(
             &tokenize("\n  // hello world\n(\n// not to end of line", "boo", 0)
                 .expect("failed to parse")[0],
-            &Token::LeftParen,
+            &Token::Simple(SimpleToken::LeftParen),
             "boo",
             FilePos::new(2, 0),
             Some(FilePos::new(2, 1)),
