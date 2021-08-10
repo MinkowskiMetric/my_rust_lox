@@ -43,8 +43,24 @@ for (var b = 0; b < 15; b = b + 1) {
 
 print "now it's finished";
 
-//fun main() {
-//   print "the answer is " + 42.0;
-//}
+fun main(answer) {
+   return "the answer is " + answer;
+}
 
-//main();
+print main(42.0);
+
+fun fib(num) {
+    var result;
+
+    if (num == 0 or num == 1) {
+        result = 1;
+    } else {
+        result = fib(num - 1) + fib(num - 2);
+    }
+
+    return result;
+}
+
+for (var i = 0; i < 10; i = i + 1) {
+    print "Fib " + i + " = " + fib(i);
+}

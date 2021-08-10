@@ -63,3 +63,22 @@ impl fmt::Display for LoxError {
 }
 
 pub type LoxResult<T> = Result<T, LoxError>;
+
+pub enum UnwindableLoxError {
+    Error(LoxError),
+    Return(Value),
+}
+
+pub type UnwindableLoxResult<T> = Result<T, UnwindableLoxError>;
+
+impl UnwindableLoxError {
+    pub fn return_value(v: Value) -> Self {
+        Self::Return(v)
+    }
+}
+
+impl From<LoxError> for UnwindableLoxError {
+    fn from(e: LoxError) -> Self {
+        Self::Error(e)
+    }
+}

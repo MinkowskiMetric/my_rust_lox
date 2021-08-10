@@ -6,9 +6,11 @@ pub enum Statement {
     Expression(Position, Expression),
     Print(Position, Expression),
     VarDeclaration(Position, String, Expression),
+    FuncDeclaration(Position, String, Vec<String>, Box<Statement>),
     Block(Position, Vec<Statement>),
     If(Position, Expression, Box<Statement>, Option<Box<Statement>>),
     While(Position, Expression, Box<Statement>),
+    Return(Position, Expression),
 }
 
 impl Statement {
@@ -17,9 +19,11 @@ impl Statement {
             Self::Expression(pos, ..)
             | Self::Print(pos, ..)
             | Self::VarDeclaration(pos, ..)
+            | Self::FuncDeclaration(pos, ..)
             | Self::Block(pos, ..)
             | Self::If(pos, ..)
-            | Self::While(pos, ..) => pos,
+            | Self::While(pos, ..)
+            | Self::Return(pos, ..) => pos,
         }
     }
 }
@@ -36,6 +40,9 @@ pub trait StatementVisitor {
             Statement::VarDeclaration(position, identifier, expr) => {
                 self.accept_var_declaration(position, identifier, expr)
             }
+            Statement::FuncDeclaration(position, name, parameters, body) => {
+                self.accept_func_declaration(position, name, parameters, body)
+            }
             Statement::Block(position, statements) => self.accept_block(position, statements),
             Statement::If(position, condition, then_branch, else_branch) => {
                 self.accept_if(position, condition, then_branch, else_branch.as_deref())
@@ -43,6 +50,7 @@ pub trait StatementVisitor {
             Statement::While(position, expression, body) => {
                 self.accept_while(position, expression, body)
             }
+            Statement::Return(position, expression) => self.accept_return(position, expression),
         }
     }
 
@@ -58,6 +66,13 @@ pub trait StatementVisitor {
         identifier: &str,
         expr: &Expression,
     ) -> Self::Return;
+    fn accept_func_declaration(
+        &mut self,
+        position: &Position,
+        name: &str,
+        parameters: &[String],
+        body: &Statement,
+    ) -> Self::Return;
     fn accept_block(&mut self, position: &Position, statements: &[Statement]) -> Self::Return;
     fn accept_if(
         &mut self,
@@ -72,6 +87,7 @@ pub trait StatementVisitor {
         condition: &Expression,
         body: &Statement,
     ) -> Self::Return;
+    fn accept_return(&mut self, position: &Position, expr: &Expression) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -108,6 +124,20 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
         writeln!(self.f, "var {} = {};", identifier, expr)
     }
 
+    fn accept_func_declaration(
+        &mut self,
+        _position: &Position,
+        name: &str,
+        parameters: &[String],
+        body: &Statement,
+    ) -> Self::Return {
+        write!(self.f, "fun {}(", name)?;
+        for parameter in parameters {
+            write!(self.f, "{}, ", parameter)?;
+        }
+        write!(self.f, ") {}", body)
+    }
+
     fn accept_block(&mut self, _position: &Position, statements: &[Statement]) -> Self::Return {
         // TODOTODOTODO - indentation would be nice
         writeln!(self.f, "{{")?;
@@ -141,6 +171,10 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
         body: &Statement,
     ) -> Self::Return {
         writeln!(self.f, "while ({}) {}", condition, body)
+    }
+
+    fn accept_return(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
+        writeln!(self.f, "return {};", expr)
     }
 }
 

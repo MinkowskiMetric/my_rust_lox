@@ -77,6 +77,17 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         self.advance_token();
     }
 
+    fn advance_identifier(&mut self) -> LoxResult<String> {
+        match self.advance_token() {
+            Some(Token::Identifier(name)) => Ok(name),
+            Some(unexpected_token) => Err(LoxError::UnexpectedToken(
+                unexpected_token,
+                self.current_position(),
+            )),
+            None => panic!("End of file token missing"),
+        }
+    }
+
     fn current_position(&self) -> Position {
         self.last_token_pos.clone().unwrap()
     }
@@ -124,6 +135,8 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
     fn declaration(&mut self) -> LoxResult<Statement> {
         if self.match_next(SimpleToken::Var) {
             self.var_declaration()
+        } else if self.match_next(SimpleToken::Fun) {
+            self.func_declaration()
         } else {
             self.statement()
         }
@@ -132,10 +145,7 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
     fn var_declaration(&mut self) -> LoxResult<Statement> {
         self.assert_next(SimpleToken::Var);
 
-        let name = match self.advance_token() {
-            Some(Token::Identifier(name)) => name,
-            _ => return Err(LoxError::MissingIdentifier(self.current_position())),
-        };
+        let name = self.advance_identifier()?;
         let name_pos = self.current_position();
 
         let expr = if self.consume_next(SimpleToken::Equal) {
@@ -149,6 +159,39 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         Ok(Statement::VarDeclaration(name_pos, name, expr))
     }
 
+    fn func_declaration(&mut self) -> LoxResult<Statement> {
+        self.assert_next(SimpleToken::Fun);
+        let start_pos = self.current_position();
+
+        let name = self.advance_identifier()?;
+        self.expect_next(SimpleToken::LeftParen)?;
+
+        let mut parameters = Vec::new();
+
+        if !self.match_next(SimpleToken::RightParen) {
+            loop {
+                parameters.push(self.advance_identifier()?);
+
+                if self.match_next(SimpleToken::RightParen) {
+                    break;
+                }
+
+                self.expect_next(SimpleToken::Comma)?;
+            }
+        }
+
+        self.expect_next(SimpleToken::RightParen)?;
+
+        let body = self.block()?;
+
+        Ok(Statement::FuncDeclaration(
+            start_pos,
+            name,
+            parameters,
+            Box::new(body),
+        ))
+    }
+
     fn statement(&mut self) -> LoxResult<Statement> {
         match self.peek_token() {
             Some(Token::Simple(SimpleToken::Print)) => self.print_statement(),
@@ -156,6 +199,7 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
             Some(Token::Simple(SimpleToken::If)) => self.if_statement(),
             Some(Token::Simple(SimpleToken::While)) => self.while_statement(),
             Some(Token::Simple(SimpleToken::For)) => self.for_statement(),
+            Some(Token::Simple(SimpleToken::Return)) => self.return_statement(),
             _ => self.expression_statement(),
         }
     }
@@ -293,6 +337,21 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         } else {
             Ok(looper)
         }
+    }
+
+    fn return_statement(&mut self) -> LoxResult<Statement> {
+        self.assert_next(SimpleToken::Return);
+        let start_pos = self.current_position();
+
+        let expr = if self.match_next(SimpleToken::Semicolon) {
+            Expression::Literal(start_pos.clone(), Nil.into())
+        } else {
+            self.expression()?
+        };
+
+        self.expect_next(SimpleToken::Semicolon)?;
+
+        Ok(Statement::Return(start_pos, expr))
     }
 
     fn expression(&mut self) -> LoxResult<Expression> {

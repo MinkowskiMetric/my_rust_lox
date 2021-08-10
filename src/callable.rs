@@ -1,4 +1,4 @@
-use crate::{Interpreter, LoxResult, Value};
+use crate::{Interpreter, LoxResult, Statement, Value};
 use std::fmt;
 
 pub trait Callable: fmt::Debug + fmt::Display {
@@ -47,4 +47,40 @@ pub fn make_native_function<F: 'static + Fn(&mut Interpreter, &[Value]) -> LoxRe
     f: F,
 ) -> Value {
     NativeCallable::new(f, arity).into()
+}
+
+#[derive(Debug, Clone)]
+struct ScriptCallable {
+    parameters: Vec<String>,
+    body: Statement,
+}
+
+impl Callable for ScriptCallable {
+    fn arity(&self) -> usize {
+        self.parameters.len()
+    }
+
+    fn call(&self, interpreter: &mut Interpreter, arguments: &[Value]) -> LoxResult<Value> {
+        assert_eq!(self.parameters.len(), arguments.len());
+
+        let mut frame = interpreter.create_function_frame();
+        for i in 0..self.parameters.len() {
+            frame.declare_variable(&self.parameters[i], arguments[i].clone())?;
+        }
+
+        frame.call_function(&self.body)
+    }
+}
+
+impl fmt::Display for ScriptCallable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str("function")
+    }
+}
+
+pub fn make_script_function(parameters: &[String], body: &Statement) -> LoxResult<Value> {
+    Ok(Value::from(ScriptCallable {
+        parameters: parameters.to_vec(),
+        body: body.clone(),
+    }))
 }

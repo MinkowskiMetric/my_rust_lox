@@ -1,6 +1,7 @@
 use crate::{
-    make_native_function, BinaryOp, CallableReference, Expression, ExpressionVisitor,
-    LogicalBinaryOp, LoxError, LoxResult, Position, Statement, StatementVisitor, UnaryOp, Value,
+    make_native_function, make_script_function, BinaryOp, CallableReference, Expression,
+    ExpressionVisitor, LogicalBinaryOp, LoxError, LoxResult, Nil, Position, Statement,
+    StatementVisitor, UnaryOp, UnwindableLoxError, UnwindableLoxResult, Value,
 };
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -70,6 +71,30 @@ impl Enviroment {
     }
 }
 
+pub struct FunctionFrame<'a> {
+    interpreter: &'a mut Interpreter,
+}
+
+impl<'a> FunctionFrame<'a> {
+    pub fn declare_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
+        self.interpreter.declare_variable(name, value)
+    }
+
+    pub fn call_function(self, body: &Statement) -> LoxResult<Value> {
+        match self.interpreter.accept_statement(body) {
+            Ok(_) => Ok(Value::from(Nil)),
+            Err(UnwindableLoxError::Return(v)) => Ok(v),
+            Err(UnwindableLoxError::Error(e)) => Err(e),
+        }
+    }
+}
+
+impl<'a> Drop for FunctionFrame<'a> {
+    fn drop(&mut self) {
+        self.interpreter.pop_environment()
+    }
+}
+
 pub struct Interpreter {
     global_env: Rc<RefCell<Enviroment>>,
     env: Option<Rc<RefCell<Enviroment>>>,
@@ -103,15 +128,27 @@ impl Interpreter {
         self.global_env.borrow_mut().declare(name, value)
     }
 
+    pub fn create_function_frame<'a>(&'a mut self) -> FunctionFrame<'a> {
+        self.push_environment();
+
+        FunctionFrame { interpreter: self }
+    }
+
     pub fn accept_statements<'a>(
         &mut self,
         stmts: impl IntoIterator<Item = &'a Statement>,
-    ) -> LoxResult<()> {
-        for stmt in stmts {
-            self.accept_statement(stmt)?;
-        }
+    ) -> LoxResult<Value> {
+        let runner = || -> UnwindableLoxResult<()> {
+            for stmt in stmts {
+                self.accept_statement(stmt)?;
+            }
+            Ok(())
+        };
 
-        Ok(())
+        match runner() {
+            Ok(_) => Ok(Value::from(Nil)),
+            _ => panic!(),
+        }
     }
 
     fn get_env<'a>(&'a self) -> Ref<'a, Enviroment> {
@@ -316,7 +353,7 @@ impl ExpressionVisitor for Interpreter {
 }
 
 impl StatementVisitor for Interpreter {
-    type Return = LoxResult<()>;
+    type Return = UnwindableLoxResult<()>;
 
     fn accept_expression_statement(
         &mut self,
@@ -340,7 +377,20 @@ impl StatementVisitor for Interpreter {
         expr: &Expression,
     ) -> Self::Return {
         let value = self.accept_expression(expr)?;
-        self.declare_variable(identifier, value)
+        self.declare_variable(identifier, value)?;
+        Ok(())
+    }
+
+    fn accept_func_declaration(
+        &mut self,
+        _position: &Position,
+        identifier: &str,
+        parameters: &[String],
+        body: &Statement,
+    ) -> Self::Return {
+        let value = make_script_function(parameters, body)?;
+        self.declare_variable(identifier, value)?;
+        Ok(())
     }
 
     fn accept_block(&mut self, _position: &Position, statements: &[Statement]) -> Self::Return {
@@ -383,8 +433,15 @@ impl StatementVisitor for Interpreter {
             }
         }
     }
+
+    fn accept_return(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
+        let value = self.accept_expression(expr)?;
+
+        Err(UnwindableLoxError::Return(value))
+    }
 }
 
 pub fn interpret<'a>(stmts: impl IntoIterator<Item = &'a Statement>) -> LoxResult<()> {
-    Interpreter::new()?.accept_statements(stmts)
+    Interpreter::new()?.accept_statements(stmts)?;
+    Ok(())
 }
