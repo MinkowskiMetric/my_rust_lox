@@ -14,12 +14,12 @@ pub use bvalue::{BValue, BValueType};
 pub use callable::Callable;
 pub use error::{LoxError, LoxResult};
 pub use interpreter::{interpret, Interpreter};
-pub use lexer::{tokenize, tokenize_file, SimpleToken, Token};
+pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};
 pub use parser::{
     parse, BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, Parser, Statement,
     StatementVisitor, UnaryOp,
 };
-pub use position::{tag_position, FilePos, Position, PositionTagged};
+pub use position::{FilePos, Position};
 pub use value::{Nil, Value};
 
 fn print_error(error: LoxError) {

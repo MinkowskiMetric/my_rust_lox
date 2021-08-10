@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, LoxError, LoxResult, PositionTagged,
+    BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, LoxError, LoxResult, Position,
     Statement, StatementVisitor, UnaryOp, Value,
 };
 use std::{collections::HashMap, convert::TryFrom};
@@ -60,10 +60,10 @@ impl Interpreter {
 
     pub fn accept_statements<'a>(
         &mut self,
-        stmts: impl IntoIterator<Item = &'a PositionTagged<Statement>>,
+        stmts: impl IntoIterator<Item = &'a Statement>,
     ) -> LoxResult<()> {
         for stmt in stmts {
-            self.accept_statement(stmt.value())?;
+            self.accept_statement(stmt)?;
         }
 
         Ok(())
@@ -119,11 +119,16 @@ impl Interpreter {
 impl ExpressionVisitor for Interpreter {
     type Return = LoxResult<Value>;
 
-    fn accept_literal(&mut self, value: &Value) -> Self::Return {
+    fn accept_literal(&mut self, _position: &Position, value: &Value) -> Self::Return {
         Ok(value.clone())
     }
 
-    fn accept_unary(&mut self, op: &UnaryOp, expr: &Expression) -> Self::Return {
+    fn accept_unary(
+        &mut self,
+        _position: &Position,
+        op: &UnaryOp,
+        expr: &Expression,
+    ) -> Self::Return {
         match op {
             UnaryOp::Bang => {
                 let bool_val = bool::try_from(self.accept_expression(expr)?)?;
@@ -141,6 +146,7 @@ impl ExpressionVisitor for Interpreter {
 
     fn accept_binary(
         &mut self,
+        _position: &Position,
         left: &Expression,
         op: &BinaryOp,
         right: &Expression,
@@ -193,6 +199,7 @@ impl ExpressionVisitor for Interpreter {
 
     fn accept_logical_binary(
         &mut self,
+        _position: &Position,
         left: &Expression,
         operator: &LogicalBinaryOp,
         right: &Expression,
@@ -212,6 +219,7 @@ impl ExpressionVisitor for Interpreter {
 
     fn accept_ternary(
         &mut self,
+        _position: &Position,
         comparison: &Expression,
         true_val: &Expression,
         false_val: &Expression,
@@ -223,16 +231,26 @@ impl ExpressionVisitor for Interpreter {
         }
     }
 
-    fn accept_variable_get(&mut self, name: &str) -> Self::Return {
+    fn accept_variable_get(&mut self, _position: &Position, name: &str) -> Self::Return {
         self.get_variable(name)
     }
 
-    fn accept_assignment(&mut self, name: &str, value: &Expression) -> Self::Return {
+    fn accept_assignment(
+        &mut self,
+        _position: &Position,
+        name: &str,
+        value: &Expression,
+    ) -> Self::Return {
         let value = self.accept_expression(value)?;
         self.set_variable(name, value.clone()).map(|_| value)
     }
 
-    fn accept_call(&mut self, callee: &Expression, arguments: &[Expression]) -> Self::Return {
+    fn accept_call(
+        &mut self,
+        _position: &Position,
+        callee: &Expression,
+        arguments: &[Expression],
+    ) -> Self::Return {
         todo!("CALL {} with {:?}", callee, arguments)
     }
 }
@@ -240,23 +258,32 @@ impl ExpressionVisitor for Interpreter {
 impl StatementVisitor for Interpreter {
     type Return = LoxResult<()>;
 
-    fn accept_expression_statement(&mut self, expr: &Expression) -> Self::Return {
+    fn accept_expression_statement(
+        &mut self,
+        _position: &Position,
+        expr: &Expression,
+    ) -> Self::Return {
         self.accept_expression(expr)?;
         Ok(())
     }
 
-    fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return {
+    fn accept_print_statement(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
         let output = self.accept_expression(expr)?;
         println!("{}", output);
         Ok(())
     }
 
-    fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return {
+    fn accept_var_declaration(
+        &mut self,
+        _position: &Position,
+        identifier: &str,
+        expr: &Expression,
+    ) -> Self::Return {
         let value = self.accept_expression(expr)?;
         self.declare_variable(identifier, value)
     }
 
-    fn accept_block(&mut self, statements: &[Statement]) -> Self::Return {
+    fn accept_block(&mut self, _position: &Position, statements: &[Statement]) -> Self::Return {
         self.run_in_nested_environment(|interpreter| {
             for statement in statements {
                 interpreter.accept_statement(statement)?;
@@ -268,6 +295,7 @@ impl StatementVisitor for Interpreter {
 
     fn accept_if(
         &mut self,
+        _position: &Position,
         condition: &Expression,
         then_branch: &Statement,
         else_branch: Option<&Statement>,
@@ -281,7 +309,12 @@ impl StatementVisitor for Interpreter {
         }
     }
 
-    fn accept_while(&mut self, condition: &Expression, body: &Statement) -> Self::Return {
+    fn accept_while(
+        &mut self,
+        _position: &Position,
+        condition: &Expression,
+        body: &Statement,
+    ) -> Self::Return {
         loop {
             if !bool::from(self.accept_expression(condition)?) {
                 return Ok(());
@@ -292,8 +325,6 @@ impl StatementVisitor for Interpreter {
     }
 }
 
-pub fn interpret<'a>(
-    stmts: impl IntoIterator<Item = &'a PositionTagged<Statement>>,
-) -> LoxResult<()> {
+pub fn interpret<'a>(stmts: impl IntoIterator<Item = &'a Statement>) -> LoxResult<()> {
     Interpreter::new().accept_statements(stmts)
 }

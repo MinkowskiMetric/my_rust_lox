@@ -1,5 +1,5 @@
 use super::{SimpleToken, Token};
-use crate::{FilePos, LoxError, LoxResult, Position, PositionTagged};
+use crate::{FilePos, LoxError, LoxResult, Position, PositionedToken};
 use lazy_static::lazy_static;
 use maplit::hashmap;
 use std::{
@@ -144,7 +144,7 @@ impl<'a> TokenReader<'a> {
         }
     }
 
-    fn consume_string(&mut self) -> LoxResult<PositionTagged<Token>> {
+    fn consume_string(&mut self) -> LoxResult<PositionedToken> {
         let mut ret = String::new();
 
         loop {
@@ -174,7 +174,7 @@ impl<'a> TokenReader<'a> {
         }
     }
 
-    fn consume_identifier(&mut self, first_char: char) -> LoxResult<PositionTagged<Token>> {
+    fn consume_identifier(&mut self, first_char: char) -> LoxResult<PositionedToken> {
         let mut ret: String = first_char.into();
 
         loop {
@@ -189,7 +189,7 @@ impl<'a> TokenReader<'a> {
         }
     }
 
-    fn consume_number(&mut self, first_digit: char) -> LoxResult<PositionTagged<Token>> {
+    fn consume_number(&mut self, first_digit: char) -> LoxResult<PositionedToken> {
         let mut num_str: String = first_digit.into();
 
         loop {
@@ -209,28 +209,24 @@ impl<'a> TokenReader<'a> {
         }
     }
 
-    fn emit_identifier(&self, identifier: String) -> LoxResult<PositionTagged<Token>> {
+    fn emit_identifier(&self, identifier: String) -> LoxResult<PositionedToken> {
         match KEYWORDS.get(&*identifier).cloned() {
             Some(token) => self.emit_token(Token::Simple(token)),
             None => self.emit_token(Token::Identifier(identifier)),
         }
     }
 
-    fn emit_token(&self, token: Token) -> LoxResult<PositionTagged<Token>> {
-        Ok(PositionTagged::new(token, self.token_position()))
+    fn emit_token(&self, token: Token) -> LoxResult<PositionedToken> {
+        Ok(PositionedToken::new(token, self.token_position()))
     }
 
     fn token_position(&self) -> Position {
-        Position::new(
-            self.file_name.clone(),
-            self.start_pos,
-            Some(self.current_pos),
-        )
+        Position::new(self.file_name.clone(), self.start_pos, self.current_pos)
     }
 }
 
 impl<'a> Iterator for TokenReader<'a> {
-    type Item = LoxResult<PositionTagged<Token>>;
+    type Item = LoxResult<PositionedToken>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
@@ -295,7 +291,7 @@ pub fn tokenize<'a, 'b>(
     code: &'a str,
     file_name: &'b str,
     line: u32,
-) -> LoxResult<Vec<PositionTagged<Token>>> {
+) -> LoxResult<Vec<PositionedToken>> {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
     for result in TokenReader::new(code, Rc::new(file_name.into()), line) {
@@ -312,7 +308,7 @@ pub fn tokenize<'a, 'b>(
     }
 }
 
-pub fn tokenize_file(path: &str) -> LoxResult<Vec<PositionTagged<Token>>> {
+pub fn tokenize_file(path: &str) -> LoxResult<Vec<PositionedToken>> {
     let mut file = fs::File::open(path)?;
 
     let mut code = String::new();
@@ -326,13 +322,13 @@ mod test {
     use super::*;
 
     fn assert_token_match(
-        result: &PositionTagged<Token>,
+        result: &PositionedToken,
         token: &Token,
         file_name: &str,
         start_pos: FilePos,
-        end_pos: Option<FilePos>,
+        end_pos: FilePos,
     ) {
-        assert_eq!(*result.value(), *token);
+        assert_eq!(*result.token(), *token);
         assert_eq!(result.position().file_name().as_ref(), file_name);
         assert_eq!(*result.position().start(), start_pos);
         assert_eq!(*result.position().end(), end_pos);
@@ -343,7 +339,7 @@ mod test {
         expected: char,
         file_name: &str,
         start_pos: FilePos,
-        end_pos: Option<FilePos>,
+        end_pos: FilePos,
     ) {
         match error {
             LoxError::InvalidCharacter(ch, pos) => {
@@ -399,12 +395,12 @@ mod test {
                 &expected[idx].token,
                 "filename",
                 FilePos::new(0, expected[idx].start_col),
-                Some(FilePos::new(0, expected[idx].end_col)),
+                FilePos::new(0, expected[idx].end_col),
             );
         }
 
         assert_eq!(
-            *tokens[expected.len()].value(),
+            *tokens[expected.len()].token(),
             Token::Simple(SimpleToken::EndOfFile)
         );
     }
@@ -418,7 +414,7 @@ mod test {
                     expected[idx].ch,
                     "filename",
                     FilePos::new(0, expected[idx].start_col),
-                    Some(FilePos::new(0, expected[idx].end_col)),
+                    FilePos::new(0, expected[idx].end_col),
                 );
             }
         }
@@ -468,14 +464,14 @@ mod test {
             &Token::Literal("one\n\ntwo".to_string().into()),
             "boo",
             FilePos::new(2, 0),
-            Some(FilePos::new(4, 4)),
+            FilePos::new(4, 4),
         );
         assert_token_match(
             &tokenize("\n\n(", "boo", 0).expect("failed to parse")[0],
             &Token::Simple(SimpleToken::LeftParen),
             "boo",
             FilePos::new(2, 0),
-            Some(FilePos::new(2, 1)),
+            FilePos::new(2, 1),
         );
         assert_token_match(
             &tokenize("\n  // hello world\n(\n// not to end of line", "boo", 0)
@@ -483,7 +479,7 @@ mod test {
             &Token::Simple(SimpleToken::LeftParen),
             "boo",
             FilePos::new(2, 0),
-            Some(FilePos::new(2, 1)),
+            FilePos::new(2, 1),
         );
     }
 }

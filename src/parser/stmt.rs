@@ -1,14 +1,27 @@
-use crate::Expression;
+use crate::{Expression, Position};
 use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Expression(Expression),
-    Print(Expression),
-    VarDeclaration(String, Expression),
-    Block(Vec<Statement>),
-    If(Expression, Box<Statement>, Option<Box<Statement>>),
-    While(Expression, Box<Statement>),
+    Expression(Position, Expression),
+    Print(Position, Expression),
+    VarDeclaration(Position, String, Expression),
+    Block(Position, Vec<Statement>),
+    If(Position, Expression, Box<Statement>, Option<Box<Statement>>),
+    While(Position, Expression, Box<Statement>),
+}
+
+impl Statement {
+    pub fn position(&self) -> &Position {
+        match self {
+            Self::Expression(pos, ..)
+            | Self::Print(pos, ..)
+            | Self::VarDeclaration(pos, ..)
+            | Self::Block(pos, ..)
+            | Self::If(pos, ..)
+            | Self::While(pos, ..) => pos,
+        }
+    }
 }
 
 pub trait StatementVisitor {
@@ -16,30 +29,49 @@ pub trait StatementVisitor {
 
     fn accept_statement(&mut self, stmt: &Statement) -> Self::Return {
         match stmt {
-            Statement::Expression(expr) => self.accept_expression_statement(expr),
-            Statement::Print(expr) => self.accept_print_statement(expr),
-            Statement::VarDeclaration(identifier, expr) => {
-                self.accept_var_declaration(identifier, expr)
+            Statement::Expression(position, expr) => {
+                self.accept_expression_statement(position, expr)
             }
-            Statement::Block(statements) => self.accept_block(statements),
-            Statement::If(condition, then_branch, else_branch) => {
-                self.accept_if(condition, then_branch, else_branch.as_deref())
+            Statement::Print(position, expr) => self.accept_print_statement(position, expr),
+            Statement::VarDeclaration(position, identifier, expr) => {
+                self.accept_var_declaration(position, identifier, expr)
             }
-            Statement::While(expression, body) => self.accept_while(expression, body),
+            Statement::Block(position, statements) => self.accept_block(position, statements),
+            Statement::If(position, condition, then_branch, else_branch) => {
+                self.accept_if(position, condition, then_branch, else_branch.as_deref())
+            }
+            Statement::While(position, expression, body) => {
+                self.accept_while(position, expression, body)
+            }
         }
     }
 
-    fn accept_expression_statement(&mut self, expr: &Expression) -> Self::Return;
-    fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return;
-    fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return;
-    fn accept_block(&mut self, statements: &[Statement]) -> Self::Return;
+    fn accept_expression_statement(
+        &mut self,
+        position: &Position,
+        expr: &Expression,
+    ) -> Self::Return;
+    fn accept_print_statement(&mut self, position: &Position, expr: &Expression) -> Self::Return;
+    fn accept_var_declaration(
+        &mut self,
+        position: &Position,
+        identifier: &str,
+        expr: &Expression,
+    ) -> Self::Return;
+    fn accept_block(&mut self, position: &Position, statements: &[Statement]) -> Self::Return;
     fn accept_if(
         &mut self,
+        position: &Position,
         condition: &Expression,
         then_branch: &Statement,
         else_branch: Option<&Statement>,
     ) -> Self::Return;
-    fn accept_while(&mut self, condition: &Expression, body: &Statement) -> Self::Return;
+    fn accept_while(
+        &mut self,
+        position: &Position,
+        condition: &Expression,
+        body: &Statement,
+    ) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -55,19 +87,28 @@ impl<'a, 'b> StatementFormatter<'a, 'b> {
 impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
     type Return = Result<(), fmt::Error>;
 
-    fn accept_expression_statement(&mut self, expr: &Expression) -> Self::Return {
+    fn accept_expression_statement(
+        &mut self,
+        _position: &Position,
+        expr: &Expression,
+    ) -> Self::Return {
         writeln!(self.f, "{};", expr)
     }
 
-    fn accept_print_statement(&mut self, expr: &Expression) -> Self::Return {
+    fn accept_print_statement(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
         writeln!(self.f, "print {};", expr)
     }
 
-    fn accept_var_declaration(&mut self, identifier: &str, expr: &Expression) -> Self::Return {
+    fn accept_var_declaration(
+        &mut self,
+        _position: &Position,
+        identifier: &str,
+        expr: &Expression,
+    ) -> Self::Return {
         writeln!(self.f, "var {} = {};", identifier, expr)
     }
 
-    fn accept_block(&mut self, statements: &[Statement]) -> Self::Return {
+    fn accept_block(&mut self, _position: &Position, statements: &[Statement]) -> Self::Return {
         // TODOTODOTODO - indentation would be nice
         writeln!(self.f, "{{")?;
         for statement in statements {
@@ -78,6 +119,7 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
 
     fn accept_if(
         &mut self,
+        _position: &Position,
         condition: &Expression,
         then_branch: &Statement,
         else_branch: Option<&Statement>,
@@ -92,7 +134,12 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
         }
     }
 
-    fn accept_while(&mut self, condition: &Expression, body: &Statement) -> Self::Return {
+    fn accept_while(
+        &mut self,
+        _position: &Position,
+        condition: &Expression,
+        body: &Statement,
+    ) -> Self::Return {
         writeln!(self.f, "while ({}) {}", condition, body)
     }
 }

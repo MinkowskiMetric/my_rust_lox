@@ -1,4 +1,4 @@
-use crate::Value;
+use crate::{Position, Value};
 use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -94,6 +94,30 @@ pub enum Token {
     Simple(SimpleToken),
     Literal(Value),
     Identifier(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct PositionedToken {
+    token: Token,
+    position: Position,
+}
+
+impl PositionedToken {
+    pub fn new(token: Token, position: Position) -> Self {
+        Self { token, position }
+    }
+
+    pub fn token(&self) -> &Token {
+        &self.token
+    }
+
+    pub fn position(&self) -> &Position {
+        &self.position
+    }
+
+    pub fn take(self) -> (Token, Position) {
+        (self.token, self.position)
+    }
 }
 
 impl fmt::Display for Token {
