@@ -12,7 +12,9 @@ use std::{
 
 // The way the book does scope nesting doesn't work, because the borrow checker hates it. This makes sense since
 // we're trying to keep a mutable reference to the global object, as well as
-struct Enviroment {
+#[derive(Debug)]
+pub struct Enviroment {
+    previous: Option<Rc<RefCell<Self>>>,
     enclosing: Option<Rc<RefCell<Self>>>,
     variables: HashMap<String, Value>,
 }
@@ -26,20 +28,30 @@ fn add_two_numbers(_interpreter: &mut Interpreter, arguments: &[Value]) -> LoxRe
 impl Enviroment {
     fn new_global() -> Self {
         Self {
+            previous: None,
             enclosing: None,
             variables: HashMap::new(),
         }
     }
 
-    fn new_child(enclosing: Option<Rc<RefCell<Self>>>) -> Self {
+    fn new_nested(enclosing: Rc<RefCell<Self>>) -> Self {
         Self {
-            enclosing: enclosing,
+            previous: Some(enclosing.clone()),
+            enclosing: Some(enclosing),
+            variables: HashMap::new(),
+        }
+    }
+
+    fn new_function(previous: Rc<RefCell<Self>>, global: Rc<RefCell<Self>>) -> Self {
+        Self {
+            previous: Some(previous),
+            enclosing: Some(global),
             variables: HashMap::new(),
         }
     }
 
     pub fn discard(&mut self) -> Option<Rc<RefCell<Self>>> {
-        self.enclosing.take()
+        self.previous.take()
     }
 
     pub fn declare(&mut self, name: &str, value: Value) -> LoxResult<()> {
@@ -95,9 +107,11 @@ impl<'a> Drop for FunctionFrame<'a> {
     }
 }
 
+pub type EnvironmentRef = Rc<RefCell<Enviroment>>;
+
 pub struct Interpreter {
-    global_env: Rc<RefCell<Enviroment>>,
-    env: Option<Rc<RefCell<Enviroment>>>,
+    global_env: EnvironmentRef,
+    env: EnvironmentRef,
 }
 
 impl Interpreter {
@@ -106,12 +120,9 @@ impl Interpreter {
 
         // The initial environment is the same as the global environment
         let global_env = Rc::new(RefCell::new(global_env));
-        let env = Some(global_env.clone());
+        let env = global_env.clone();
 
-        let mut ret = Self {
-            global_env: global_env,
-            env,
-        };
+        let mut ret = Self { global_env, env };
 
         ret.initialize_globals()?;
 
@@ -128,8 +139,8 @@ impl Interpreter {
         self.global_env.borrow_mut().declare(name, value)
     }
 
-    pub fn create_function_frame<'a>(&'a mut self) -> FunctionFrame<'a> {
-        self.push_environment();
+    pub fn create_function_frame<'a>(&'a mut self, env: &EnvironmentRef) -> FunctionFrame<'a> {
+        self.push_function_environment(env);
 
         FunctionFrame { interpreter: self }
     }
@@ -153,15 +164,13 @@ impl Interpreter {
 
     fn get_env<'a>(&'a self) -> Ref<'a, Enviroment> {
         self.env
-            .as_ref()
-            .and_then(|r| r.try_borrow().ok())
+            .try_borrow()
             .expect("Interpreter environment is inconsistent")
     }
 
     fn get_env_mut<'a>(&'a mut self) -> RefMut<'a, Enviroment> {
         self.env
-            .as_mut()
-            .and_then(|r| r.try_borrow_mut().ok())
+            .try_borrow_mut()
             .expect("Interpreter environment is inconsistent")
     }
 
@@ -177,22 +186,29 @@ impl Interpreter {
         self.get_env_mut().set(name, value)
     }
 
-    fn push_environment(&mut self) {
-        let new_environment = Rc::new(RefCell::new(Enviroment::new_child(self.env.take())));
-        self.env.replace(new_environment);
+    fn push_nested_environment(&mut self) {
+        let new_environment = Rc::new(RefCell::new(Enviroment::new_nested(self.env.clone())));
+        self.env = new_environment;
+    }
+
+    fn push_function_environment(&mut self, env: &EnvironmentRef) {
+        let new_environment = Rc::new(RefCell::new(Enviroment::new_function(
+            self.env.clone(),
+            env.clone(),
+        )));
+        self.env = new_environment;
     }
 
     fn pop_environment(&mut self) {
-        let outer_environment = self
-            .env
-            .take()
-            .expect("Interpreter environment is inconsistent");
-
-        self.env = outer_environment.borrow_mut().discard();
+        let outer_environment = self.env.clone();
+        self.env = outer_environment
+            .borrow_mut()
+            .discard()
+            .expect("Inconsistent environment stack");
     }
 
     fn run_in_nested_environment<R, F: FnOnce(&mut Self) -> R>(&mut self, f: F) -> R {
-        self.push_environment();
+        self.push_nested_environment();
         let r = f(self);
         self.pop_environment();
         r
@@ -388,7 +404,7 @@ impl StatementVisitor for Interpreter {
         parameters: &[String],
         body: &Statement,
     ) -> Self::Return {
-        let value = make_script_function(parameters, body)?;
+        let value = make_script_function(parameters, body, &self.env)?;
         self.declare_variable(identifier, value)?;
         Ok(())
     }

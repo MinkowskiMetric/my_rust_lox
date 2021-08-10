@@ -64,3 +64,30 @@ fun fib(num) {
 for (var i = 0; i < 10; i = i + 1) {
     print "Fib " + i + " = " + fib(i);
 }
+
+var check;
+
+{
+    fun my_check() {
+        print b;
+    }
+
+    check = my_check;
+}
+
+var b = "hello";
+check();
+
+fun makeCounter() {
+  var i = 0;
+  fun count() {
+    i = i + 1;
+    print i;
+  }
+
+  return count;
+}
+
+var counter = makeCounter();
+counter(); // "1".
+counter(); // "2".

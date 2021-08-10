@@ -1,4 +1,4 @@
-use crate::{Interpreter, LoxResult, Statement, Value};
+use crate::{EnvironmentRef, Interpreter, LoxResult, Statement, Value};
 use std::fmt;
 
 pub trait Callable: fmt::Debug + fmt::Display {
@@ -53,6 +53,7 @@ pub fn make_native_function<F: 'static + Fn(&mut Interpreter, &[Value]) -> LoxRe
 struct ScriptCallable {
     parameters: Vec<String>,
     body: Statement,
+    env: EnvironmentRef,
 }
 
 impl Callable for ScriptCallable {
@@ -63,7 +64,7 @@ impl Callable for ScriptCallable {
     fn call(&self, interpreter: &mut Interpreter, arguments: &[Value]) -> LoxResult<Value> {
         assert_eq!(self.parameters.len(), arguments.len());
 
-        let mut frame = interpreter.create_function_frame();
+        let mut frame = interpreter.create_function_frame(&self.env);
         for i in 0..self.parameters.len() {
             frame.declare_variable(&self.parameters[i], arguments[i].clone())?;
         }
@@ -78,9 +79,14 @@ impl fmt::Display for ScriptCallable {
     }
 }
 
-pub fn make_script_function(parameters: &[String], body: &Statement) -> LoxResult<Value> {
+pub fn make_script_function(
+    parameters: &[String],
+    body: &Statement,
+    env: &EnvironmentRef,
+) -> LoxResult<Value> {
     Ok(Value::from(ScriptCallable {
         parameters: parameters.to_vec(),
         body: body.clone(),
+        env: env.clone(),
     }))
 }

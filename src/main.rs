@@ -13,7 +13,7 @@ mod value;
 pub use bvalue::{BValue, BValueType};
 pub use callable::{make_native_function, make_script_function, Callable, CallableReference};
 pub use error::{LoxError, LoxResult, UnwindableLoxError, UnwindableLoxResult};
-pub use interpreter::{interpret, Interpreter};
+pub use interpreter::{interpret, EnvironmentRef, Interpreter};
 pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};
 pub use parser::{
     parse, BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, Parser, Statement,
