@@ -1,4 +1,4 @@
-use crate::{EnvironmentRef, Interpreter, LoxResult, Statement, Value};
+use crate::{EnvironmentRef, Interpreter, LoxResult, ResolvedStatement, Value};
 use std::fmt;
 
 pub trait Callable: fmt::Debug + fmt::Display {
@@ -52,7 +52,7 @@ pub fn make_native_function<F: 'static + Fn(&mut Interpreter, &[Value]) -> LoxRe
 #[derive(Debug, Clone)]
 struct ScriptCallable {
     parameters: Vec<String>,
-    body: Statement,
+    body: ResolvedStatement,
     env: EnvironmentRef,
 }
 
@@ -81,7 +81,7 @@ impl fmt::Display for ScriptCallable {
 
 pub fn make_script_function(
     parameters: &[String],
-    body: &Statement,
+    body: &ResolvedStatement,
     env: &EnvironmentRef,
 ) -> LoxResult<Value> {
     Ok(Value::from(ScriptCallable {

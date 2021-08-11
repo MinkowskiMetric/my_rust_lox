@@ -15,6 +15,7 @@ pub enum LoxError {
     BValueTypeError(BValue, BValueType),
     MissingIdentifier(Position),
     UnknownVariable(String),
+    UseVariableInInitializer(Position, String),
 }
 
 impl From<io::Error> for LoxError {
@@ -51,6 +52,9 @@ impl fmt::Display for LoxError {
             }
             Self::MissingIdentifier(pos) => write!(f, "Identifier missing at {}", pos),
             Self::UnknownVariable(name) => write!(f, "Unknown variable '{}'", name),
+            Self::UseVariableInInitializer(name, pos) => {
+                write!(f, "Used variable {} in initializer at {}", name, pos)
+            }
 
             Self::TokenizationError(errs) => {
                 for err in errs {
@@ -64,6 +68,7 @@ impl fmt::Display for LoxError {
 
 pub type LoxResult<T> = Result<T, LoxError>;
 
+#[derive(Debug)]
 pub enum UnwindableLoxError {
     Error(LoxError),
     Return(Value),

@@ -2,6 +2,9 @@ mod expr;
 mod parser;
 mod stmt;
 
-pub use expr::{BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, UnaryOp};
+pub use expr::{
+    BaseExpression, BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, ResolvedExpression,
+    ResolvedIdentifier, UnaryOp,
+};
 pub use parser::{parse, Parser};
-pub use stmt::{Statement, StatementVisitor};
+pub use stmt::{ResolvedStatement, Statement, StatementVisitor};

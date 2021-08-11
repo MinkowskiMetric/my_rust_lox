@@ -1,7 +1,7 @@
 use crate::{Position, Value};
 use std::fmt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
     Minus,
     Bang,
@@ -18,7 +18,7 @@ impl fmt::Display for UnaryOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
     Comma,
     EqualEqual,
@@ -51,7 +51,7 @@ impl fmt::Display for BinaryOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum LogicalBinaryOp {
     And,
     Or,
@@ -67,18 +67,18 @@ impl fmt::Display for LogicalBinaryOp {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub enum BaseExpression<Identifier: fmt::Display + fmt::Debug + Clone> {
     Literal(Position, Value),
-    Unary(Position, UnaryOp, Box<Expression>),
-    Binary(Position, Box<Expression>, BinaryOp, Box<Expression>),
-    LogicalBinary(Position, Box<Expression>, LogicalBinaryOp, Box<Expression>),
-    Ternary(Position, Box<Expression>, Box<Expression>, Box<Expression>),
-    VariableGet(Position, String),
-    Assignment(Position, String, Box<Expression>),
-    Call(Position, Box<Expression>, Vec<Expression>),
+    Unary(Position, UnaryOp, Box<Self>),
+    Binary(Position, Box<Self>, BinaryOp, Box<Self>),
+    LogicalBinary(Position, Box<Self>, LogicalBinaryOp, Box<Self>),
+    Ternary(Position, Box<Self>, Box<Self>, Box<Self>),
+    VariableGet(Position, Identifier),
+    Assignment(Position, Identifier, Box<Self>),
+    Call(Position, Box<Self>, Vec<Self>),
 }
 
-impl Expression {
+impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
     pub fn position(&self) -> &Position {
         match self {
             Self::Literal(pos, ..)
@@ -92,31 +92,65 @@ impl Expression {
         }
     }
 }
-pub trait ExpressionVisitor {
+
+#[derive(Debug, Clone)]
+pub enum ResolvedIdentifier {
+    Scoped(String, usize),
+    Global(String),
+}
+
+impl ResolvedIdentifier {
+    pub fn scoped_identifier(name: &str, depth: usize) -> Self {
+        Self::Scoped(name.to_string(), depth)
+    }
+
+    pub fn global_identifier(name: &str) -> Self {
+        Self::Global(name.to_string())
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Scoped(name, ..) | Self::Global(name, ..) => name,
+        }
+    }
+}
+
+impl fmt::Display for ResolvedIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(&self.name())
+    }
+}
+
+pub type Expression = BaseExpression<String>;
+pub type ResolvedExpression = BaseExpression<ResolvedIdentifier>;
+
+pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
     type Return;
 
-    fn accept_expression(&mut self, expr: &Expression) -> Self::Return {
+    fn accept_expression(&mut self, expr: &BaseExpression<Identifier>) -> Self::Return {
         match expr {
-            Expression::Literal(position, value) => self.accept_literal(position, value),
-            Expression::Unary(position, operator, expr) => {
+            BaseExpression::<Identifier>::Literal(position, value) => {
+                self.accept_literal(position, value)
+            }
+            BaseExpression::<Identifier>::Unary(position, operator, expr) => {
                 self.accept_unary(position, operator, expr)
             }
-            Expression::Binary(position, left, operator, right) => {
+            BaseExpression::<Identifier>::Binary(position, left, operator, right) => {
                 self.accept_binary(position, left, operator, right)
             }
-            Expression::LogicalBinary(position, left, operator, right) => {
+            BaseExpression::<Identifier>::LogicalBinary(position, left, operator, right) => {
                 self.accept_logical_binary(position, left, operator, right)
             }
-            Expression::Ternary(position, comparison, true_val, false_val) => {
+            BaseExpression::<Identifier>::Ternary(position, comparison, true_val, false_val) => {
                 self.accept_ternary(position, comparison, true_val, false_val)
             }
-            Expression::VariableGet(position, identifier) => {
+            BaseExpression::<Identifier>::VariableGet(position, identifier) => {
                 self.accept_variable_get(position, identifier)
             }
-            Expression::Assignment(position, identifier, value) => {
+            BaseExpression::<Identifier>::Assignment(position, identifier, value) => {
                 self.accept_assignment(position, identifier, value)
             }
-            Expression::Call(position, callee, arguments) => {
+            BaseExpression::<Identifier>::Call(position, callee, arguments) => {
                 self.accept_call(position, callee, arguments)
             }
         }
@@ -127,41 +161,41 @@ pub trait ExpressionVisitor {
         &mut self,
         position: &Position,
         op: &UnaryOp,
-        expr: &Expression,
+        expr: &BaseExpression<Identifier>,
     ) -> Self::Return;
     fn accept_binary(
         &mut self,
         position: &Position,
-        left: &Expression,
+        left: &BaseExpression<Identifier>,
         op: &BinaryOp,
-        right: &Expression,
+        right: &BaseExpression<Identifier>,
     ) -> Self::Return;
     fn accept_logical_binary(
         &mut self,
         position: &Position,
-        left: &Expression,
+        left: &BaseExpression<Identifier>,
         op: &LogicalBinaryOp,
-        right: &Expression,
+        right: &BaseExpression<Identifier>,
     ) -> Self::Return;
     fn accept_ternary(
         &mut self,
         position: &Position,
-        comparison: &Expression,
-        true_val: &Expression,
-        false_val: &Expression,
+        comparison: &BaseExpression<Identifier>,
+        true_val: &BaseExpression<Identifier>,
+        false_val: &BaseExpression<Identifier>,
     ) -> Self::Return;
-    fn accept_variable_get(&mut self, position: &Position, name: &str) -> Self::Return;
+    fn accept_variable_get(&mut self, position: &Position, name: &Identifier) -> Self::Return;
     fn accept_assignment(
         &mut self,
         position: &Position,
-        name: &str,
-        value: &Expression,
+        name: &Identifier,
+        value: &BaseExpression<Identifier>,
     ) -> Self::Return;
     fn accept_call(
         &mut self,
         position: &Position,
-        callee: &Expression,
-        arguments: &[Expression],
+        callee: &BaseExpression<Identifier>,
+        arguments: &[BaseExpression<Identifier>],
     ) -> Self::Return;
 }
 
@@ -175,7 +209,9 @@ impl<'a, 'b> ExpressionPrinter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
+impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Identifier>
+    for ExpressionPrinter<'a, 'b>
+{
     type Return = Result<(), fmt::Error>;
 
     fn accept_literal(&mut self, _position: &Position, value: &Value) -> Self::Return {
@@ -189,7 +225,7 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
         &mut self,
         _position: &Position,
         operator: &UnaryOp,
-        expression: &Expression,
+        expression: &BaseExpression<Identifier>,
     ) -> Self::Return {
         write!(self.f, "({}{})", operator, expression)
     }
@@ -197,9 +233,9 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
     fn accept_binary(
         &mut self,
         _position: &Position,
-        left: &Expression,
+        left: &BaseExpression<Identifier>,
         operator: &BinaryOp,
-        right: &Expression,
+        right: &BaseExpression<Identifier>,
     ) -> Self::Return {
         write!(self.f, "({} {} {})", left, operator, right)
     }
@@ -207,9 +243,9 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
     fn accept_logical_binary(
         &mut self,
         _position: &Position,
-        left: &Expression,
+        left: &BaseExpression<Identifier>,
         operator: &LogicalBinaryOp,
-        right: &Expression,
+        right: &BaseExpression<Identifier>,
     ) -> Self::Return {
         write!(self.f, "({} {} {})", left, operator, right)
     }
@@ -217,22 +253,22 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
     fn accept_ternary(
         &mut self,
         _position: &Position,
-        comparison: &Expression,
-        true_val: &Expression,
-        false_val: &Expression,
+        comparison: &BaseExpression<Identifier>,
+        true_val: &BaseExpression<Identifier>,
+        false_val: &BaseExpression<Identifier>,
     ) -> Self::Return {
         write!(self.f, "({} ? {} : {})", comparison, true_val, false_val)
     }
 
-    fn accept_variable_get(&mut self, _position: &Position, name: &str) -> Self::Return {
-        self.f.write_str(name)
+    fn accept_variable_get(&mut self, _position: &Position, name: &Identifier) -> Self::Return {
+        write!(self.f, "{}", name)
     }
 
     fn accept_assignment(
         &mut self,
         _position: &Position,
-        name: &str,
-        value: &Expression,
+        name: &Identifier,
+        value: &BaseExpression<Identifier>,
     ) -> Self::Return {
         write!(self.f, "({} = {})", name, value)
     }
@@ -240,8 +276,8 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
     fn accept_call(
         &mut self,
         _position: &Position,
-        callee: &Expression,
-        arguments: &[Expression],
+        callee: &BaseExpression<Identifier>,
+        arguments: &[BaseExpression<Identifier>],
     ) -> Self::Return {
         write!(self.f, "({})( ", callee)?;
 
@@ -253,7 +289,7 @@ impl<'a, 'b> ExpressionVisitor for ExpressionPrinter<'a, 'b> {
     }
 }
 
-impl fmt::Display for Expression {
+impl<Identifier: fmt::Debug + fmt::Display + Clone> fmt::Display for BaseExpression<Identifier> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         ExpressionPrinter::new(f).accept_expression(self)
     }

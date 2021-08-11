@@ -1,7 +1,7 @@
 use crate::{
-    make_native_function, make_script_function, BinaryOp, CallableReference, Expression,
-    ExpressionVisitor, LogicalBinaryOp, LoxError, LoxResult, Nil, Position, Statement,
-    StatementVisitor, UnaryOp, UnwindableLoxError, UnwindableLoxResult, Value,
+    make_native_function, make_script_function, BinaryOp, CallableReference, ExpressionVisitor,
+    LogicalBinaryOp, LoxError, LoxResult, Nil, Position, ResolvedExpression, ResolvedIdentifier,
+    ResolvedStatement, StatementVisitor, UnaryOp, UnwindableLoxError, UnwindableLoxResult, Value,
 };
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -13,9 +13,8 @@ use std::{
 // The way the book does scope nesting doesn't work, because the borrow checker hates it. This makes sense since
 // we're trying to keep a mutable reference to the global object, as well as
 #[derive(Debug)]
-pub struct Enviroment {
-    previous: Option<Rc<RefCell<Self>>>,
-    enclosing: Option<Rc<RefCell<Self>>>,
+pub struct Environment {
+    enclosing: Option<EnvironmentRef>,
     variables: HashMap<String, Value>,
 }
 
@@ -25,33 +24,12 @@ fn add_two_numbers(_interpreter: &mut Interpreter, arguments: &[Value]) -> LoxRe
     ))
 }
 
-impl Enviroment {
-    fn new_global() -> Self {
+impl Environment {
+    fn new(enclosing: Option<EnvironmentRef>) -> Self {
         Self {
-            previous: None,
-            enclosing: None,
+            enclosing,
             variables: HashMap::new(),
         }
-    }
-
-    fn new_nested(enclosing: Rc<RefCell<Self>>) -> Self {
-        Self {
-            previous: Some(enclosing.clone()),
-            enclosing: Some(enclosing),
-            variables: HashMap::new(),
-        }
-    }
-
-    fn new_function(previous: Rc<RefCell<Self>>, global: Rc<RefCell<Self>>) -> Self {
-        Self {
-            previous: Some(previous),
-            enclosing: Some(global),
-            variables: HashMap::new(),
-        }
-    }
-
-    pub fn discard(&mut self) -> Option<Rc<RefCell<Self>>> {
-        self.previous.take()
     }
 
     pub fn declare(&mut self, name: &str, value: Value) -> LoxResult<()> {
@@ -59,26 +37,42 @@ impl Enviroment {
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> LoxResult<Value> {
-        match self.variables.get(name) {
-            Some(v) => Ok(v.clone()),
-            None => match &self.enclosing {
-                Some(enclosing) => enclosing.borrow().get(name),
-                None => Err(LoxError::UnknownVariable(name.to_string())),
-            },
+    pub fn get(&self, name: &str, depth: usize) -> LoxResult<Value> {
+        if depth == 0 {
+            match self.variables.get(name) {
+                Some(v) => Ok(v.clone()),
+                None => match &self.enclosing {
+                    Some(enclosing) => enclosing.borrow().get(name, 0),
+                    None => Err(LoxError::UnknownVariable(name.to_string())),
+                },
+            }
+        } else {
+            self.enclosing
+                .as_ref()
+                .expect("Depth is larger than stack")
+                .borrow()
+                .get(name, depth - 1)
         }
     }
 
-    pub fn set(&mut self, name: &str, value: Value) -> LoxResult<()> {
-        match self.variables.get_mut(name) {
-            Some(v) => {
-                *v = value;
-                Ok(())
+    pub fn set(&mut self, name: &str, depth: usize, value: Value) -> LoxResult<()> {
+        if depth == 0 {
+            match self.variables.get_mut(name) {
+                Some(v) => {
+                    *v = value;
+                    Ok(())
+                }
+                None => match self.enclosing.as_mut() {
+                    Some(enclosing) => enclosing.borrow_mut().set(name, 0, value),
+                    None => Err(LoxError::UnknownVariable(name.to_string())),
+                },
             }
-            None => match self.enclosing.as_mut() {
-                Some(enclosing) => enclosing.borrow_mut().set(name, value),
-                None => Err(LoxError::UnknownVariable(name.to_string())),
-            },
+        } else {
+            self.enclosing
+                .as_mut()
+                .expect("Depth is larger than stack")
+                .borrow_mut()
+                .set(name, depth - 1, value)
         }
     }
 }
@@ -92,7 +86,7 @@ impl<'a> FunctionFrame<'a> {
         self.interpreter.declare_variable(name, value)
     }
 
-    pub fn call_function(self, body: &Statement) -> LoxResult<Value> {
+    pub fn call_function(self, body: &ResolvedStatement) -> LoxResult<Value> {
         match self.interpreter.accept_statement(body) {
             Ok(_) => Ok(Value::from(Nil)),
             Err(UnwindableLoxError::Return(v)) => Ok(v),
@@ -107,22 +101,19 @@ impl<'a> Drop for FunctionFrame<'a> {
     }
 }
 
-pub type EnvironmentRef = Rc<RefCell<Enviroment>>;
+pub type EnvironmentRef = Rc<RefCell<Environment>>;
 
 pub struct Interpreter {
-    global_env: EnvironmentRef,
-    env: EnvironmentRef,
+    environment_stack: Vec<EnvironmentRef>,
 }
 
 impl Interpreter {
     pub fn new() -> LoxResult<Self> {
-        let global_env = Enviroment::new_global();
+        let global_env = Rc::new(RefCell::new(Environment::new(None)));
 
-        // The initial environment is the same as the global environment
-        let global_env = Rc::new(RefCell::new(global_env));
-        let env = global_env.clone();
-
-        let mut ret = Self { global_env, env };
+        let mut ret = Self {
+            environment_stack: vec![global_env],
+        };
 
         ret.initialize_globals()?;
 
@@ -136,18 +127,18 @@ impl Interpreter {
     }
 
     pub fn declare_global(&mut self, name: &str, value: Value) -> LoxResult<()> {
-        self.global_env.borrow_mut().declare(name, value)
+        self.get_global_env_mut().declare(name, value)
     }
 
     pub fn create_function_frame<'a>(&'a mut self, env: &EnvironmentRef) -> FunctionFrame<'a> {
-        self.push_function_environment(env);
+        self.push_function_environment(env.clone());
 
         FunctionFrame { interpreter: self }
     }
 
     pub fn accept_statements<'a>(
         &mut self,
-        stmts: impl IntoIterator<Item = &'a Statement>,
+        stmts: impl IntoIterator<Item = &'a ResolvedStatement>,
     ) -> LoxResult<Value> {
         let runner = || -> UnwindableLoxResult<()> {
             for stmt in stmts {
@@ -158,53 +149,74 @@ impl Interpreter {
 
         match runner() {
             Ok(_) => Ok(Value::from(Nil)),
-            _ => panic!(),
+            c => panic!("Why did we get {:?}", c),
         }
     }
 
-    fn get_env<'a>(&'a self) -> Ref<'a, Enviroment> {
-        self.env
-            .try_borrow()
-            .expect("Interpreter environment is inconsistent")
+    fn get_env_ref<'a>(&'a self) -> &'a EnvironmentRef {
+        self.environment_stack
+            .last()
+            .expect("Missing global environment")
     }
 
-    fn get_env_mut<'a>(&'a mut self) -> RefMut<'a, Enviroment> {
-        self.env
-            .try_borrow_mut()
-            .expect("Interpreter environment is inconsistent")
+    fn get_env<'a>(&'a self) -> Ref<'a, Environment> {
+        self.get_env_ref().borrow()
+    }
+
+    fn get_env_mut<'a>(&'a mut self) -> RefMut<'a, Environment> {
+        self.get_env_ref().borrow_mut()
+    }
+
+    fn get_global_env<'a>(&'a self) -> Ref<'a, Environment> {
+        self.environment_stack[0].borrow()
+    }
+
+    fn get_global_env_mut<'a>(&'a self) -> RefMut<'a, Environment> {
+        self.environment_stack[0].borrow_mut()
     }
 
     fn declare_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
         self.get_env_mut().declare(name, value)
     }
 
-    fn get_variable(&self, name: &str) -> LoxResult<Value> {
-        self.get_env().get(name)
+    fn get_variable(&self, name: &ResolvedIdentifier) -> LoxResult<Value> {
+        let (name, depth, environment) = match name {
+            ResolvedIdentifier::Scoped(name, depth) => (name, *depth, self.get_env()),
+            ResolvedIdentifier::Global(name) => (name, 0, self.get_global_env()),
+        };
+
+        environment.get(name, depth)
     }
 
-    fn set_variable(&mut self, name: &str, value: Value) -> LoxResult<()> {
-        self.get_env_mut().set(name, value)
+    fn set_variable(&mut self, name: &ResolvedIdentifier, value: Value) -> LoxResult<()> {
+        let (name, depth, mut environment) = match name {
+            ResolvedIdentifier::Scoped(name, depth) => (name, *depth, self.get_env_mut()),
+            ResolvedIdentifier::Global(name) => (name, 0, self.get_global_env_mut()),
+        };
+
+        environment.set(name, depth, value)
     }
 
     fn push_nested_environment(&mut self) {
-        let new_environment = Rc::new(RefCell::new(Enviroment::new_nested(self.env.clone())));
-        self.env = new_environment;
+        self.push_function_environment(
+            self.environment_stack
+                .last()
+                .expect("Missing global environment")
+                .clone(),
+        );
     }
 
-    fn push_function_environment(&mut self, env: &EnvironmentRef) {
-        let new_environment = Rc::new(RefCell::new(Enviroment::new_function(
-            self.env.clone(),
-            env.clone(),
-        )));
-        self.env = new_environment;
+    fn push_function_environment(&mut self, enclosing: EnvironmentRef) {
+        let new_environment = Rc::new(RefCell::new(Environment::new(Some(enclosing.clone()))));
+        self.environment_stack.push(new_environment);
     }
 
     fn pop_environment(&mut self) {
-        let outer_environment = self.env.clone();
-        self.env = outer_environment
-            .borrow_mut()
-            .discard()
-            .expect("Inconsistent environment stack");
+        assert!(
+            self.environment_stack.len() > 1,
+            "Do not pop the global environment"
+        );
+        self.environment_stack.pop();
     }
 
     fn run_in_nested_environment<R, F: FnOnce(&mut Self) -> R>(&mut self, f: F) -> R {
@@ -215,7 +227,7 @@ impl Interpreter {
     }
 }
 
-impl ExpressionVisitor for Interpreter {
+impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
     type Return = LoxResult<Value>;
 
     fn accept_literal(&mut self, _position: &Position, value: &Value) -> Self::Return {
@@ -226,7 +238,7 @@ impl ExpressionVisitor for Interpreter {
         &mut self,
         _position: &Position,
         op: &UnaryOp,
-        expr: &Expression,
+        expr: &ResolvedExpression,
     ) -> Self::Return {
         match op {
             UnaryOp::Bang => {
@@ -246,9 +258,9 @@ impl ExpressionVisitor for Interpreter {
     fn accept_binary(
         &mut self,
         _position: &Position,
-        left: &Expression,
+        left: &ResolvedExpression,
         op: &BinaryOp,
-        right: &Expression,
+        right: &ResolvedExpression,
     ) -> Self::Return {
         match op {
             BinaryOp::Comma => {
@@ -299,9 +311,9 @@ impl ExpressionVisitor for Interpreter {
     fn accept_logical_binary(
         &mut self,
         _position: &Position,
-        left: &Expression,
+        left: &ResolvedExpression,
         operator: &LogicalBinaryOp,
-        right: &Expression,
+        right: &ResolvedExpression,
     ) -> Self::Return {
         let left = self.accept_expression(left)?;
 
@@ -319,9 +331,9 @@ impl ExpressionVisitor for Interpreter {
     fn accept_ternary(
         &mut self,
         _position: &Position,
-        comparison: &Expression,
-        true_val: &Expression,
-        false_val: &Expression,
+        comparison: &ResolvedExpression,
+        true_val: &ResolvedExpression,
+        false_val: &ResolvedExpression,
     ) -> Self::Return {
         if bool::from(self.accept_expression(comparison)?) {
             self.accept_expression(true_val)
@@ -330,15 +342,19 @@ impl ExpressionVisitor for Interpreter {
         }
     }
 
-    fn accept_variable_get(&mut self, _position: &Position, name: &str) -> Self::Return {
+    fn accept_variable_get(
+        &mut self,
+        _position: &Position,
+        name: &ResolvedIdentifier,
+    ) -> Self::Return {
         self.get_variable(name)
     }
 
     fn accept_assignment(
         &mut self,
         _position: &Position,
-        name: &str,
-        value: &Expression,
+        name: &ResolvedIdentifier,
+        value: &ResolvedExpression,
     ) -> Self::Return {
         let value = self.accept_expression(value)?;
         self.set_variable(name, value.clone()).map(|_| value)
@@ -347,8 +363,8 @@ impl ExpressionVisitor for Interpreter {
     fn accept_call(
         &mut self,
         _position: &Position,
-        callee: &Expression,
-        arguments: &[Expression],
+        callee: &ResolvedExpression,
+        arguments: &[ResolvedExpression],
     ) -> Self::Return {
         let callee = self.accept_expression(callee)?;
         match CallableReference::try_from(&callee) {
@@ -368,19 +384,23 @@ impl ExpressionVisitor for Interpreter {
     }
 }
 
-impl StatementVisitor for Interpreter {
+impl StatementVisitor<ResolvedIdentifier> for Interpreter {
     type Return = UnwindableLoxResult<()>;
 
     fn accept_expression_statement(
         &mut self,
         _position: &Position,
-        expr: &Expression,
+        expr: &ResolvedExpression,
     ) -> Self::Return {
         self.accept_expression(expr)?;
         Ok(())
     }
 
-    fn accept_print_statement(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
+    fn accept_print_statement(
+        &mut self,
+        _position: &Position,
+        expr: &ResolvedExpression,
+    ) -> Self::Return {
         let output = self.accept_expression(expr)?;
         println!("{}", output);
         Ok(())
@@ -390,7 +410,7 @@ impl StatementVisitor for Interpreter {
         &mut self,
         _position: &Position,
         identifier: &str,
-        expr: &Expression,
+        expr: &ResolvedExpression,
     ) -> Self::Return {
         let value = self.accept_expression(expr)?;
         self.declare_variable(identifier, value)?;
@@ -402,14 +422,18 @@ impl StatementVisitor for Interpreter {
         _position: &Position,
         identifier: &str,
         parameters: &[String],
-        body: &Statement,
+        body: &ResolvedStatement,
     ) -> Self::Return {
-        let value = make_script_function(parameters, body, &self.env)?;
+        let value = make_script_function(parameters, body, self.get_env_ref())?;
         self.declare_variable(identifier, value)?;
         Ok(())
     }
 
-    fn accept_block(&mut self, _position: &Position, statements: &[Statement]) -> Self::Return {
+    fn accept_block(
+        &mut self,
+        _position: &Position,
+        statements: &[ResolvedStatement],
+    ) -> Self::Return {
         self.run_in_nested_environment(|interpreter| {
             for statement in statements {
                 interpreter.accept_statement(statement)?;
@@ -422,9 +446,9 @@ impl StatementVisitor for Interpreter {
     fn accept_if(
         &mut self,
         _position: &Position,
-        condition: &Expression,
-        then_branch: &Statement,
-        else_branch: Option<&Statement>,
+        condition: &ResolvedExpression,
+        then_branch: &ResolvedStatement,
+        else_branch: Option<&ResolvedStatement>,
     ) -> Self::Return {
         let condition: bool = self.accept_expression(condition)?.into();
 
@@ -438,8 +462,8 @@ impl StatementVisitor for Interpreter {
     fn accept_while(
         &mut self,
         _position: &Position,
-        condition: &Expression,
-        body: &Statement,
+        condition: &ResolvedExpression,
+        body: &ResolvedStatement,
     ) -> Self::Return {
         loop {
             if !bool::from(self.accept_expression(condition)?) {
@@ -450,14 +474,14 @@ impl StatementVisitor for Interpreter {
         }
     }
 
-    fn accept_return(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
+    fn accept_return(&mut self, _position: &Position, expr: &ResolvedExpression) -> Self::Return {
         let value = self.accept_expression(expr)?;
 
         Err(UnwindableLoxError::Return(value))
     }
 }
 
-pub fn interpret<'a>(stmts: impl IntoIterator<Item = &'a Statement>) -> LoxResult<()> {
+pub fn interpret<'a>(stmts: impl IntoIterator<Item = &'a ResolvedStatement>) -> LoxResult<()> {
     Interpreter::new()?.accept_statements(stmts)?;
     Ok(())
 }

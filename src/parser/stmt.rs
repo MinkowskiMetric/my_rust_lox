@@ -1,19 +1,24 @@
-use crate::{Expression, Position};
+use crate::{BaseExpression, Position, ResolvedIdentifier};
 use std::fmt;
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Expression(Position, Expression),
-    Print(Position, Expression),
-    VarDeclaration(Position, String, Expression),
-    FuncDeclaration(Position, String, Vec<String>, Box<Statement>),
-    Block(Position, Vec<Statement>),
-    If(Position, Expression, Box<Statement>, Option<Box<Statement>>),
-    While(Position, Expression, Box<Statement>),
-    Return(Position, Expression),
+pub enum BaseStatement<Identifier: fmt::Display + fmt::Debug + Clone> {
+    Expression(Position, BaseExpression<Identifier>),
+    Print(Position, BaseExpression<Identifier>),
+    VarDeclaration(Position, String, BaseExpression<Identifier>),
+    FuncDeclaration(Position, String, Vec<String>, Box<Self>),
+    Block(Position, Vec<Self>),
+    If(
+        Position,
+        BaseExpression<Identifier>,
+        Box<Self>,
+        Option<Box<Self>>,
+    ),
+    While(Position, BaseExpression<Identifier>, Box<Self>),
+    Return(Position, BaseExpression<Identifier>),
 }
 
-impl Statement {
+impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseStatement<Identifier> {
     pub fn position(&self) -> &Position {
         match self {
             Self::Expression(pos, ..)
@@ -28,66 +33,87 @@ impl Statement {
     }
 }
 
-pub trait StatementVisitor {
+pub type Statement = BaseStatement<String>;
+pub type ResolvedStatement = BaseStatement<ResolvedIdentifier>;
+
+pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
     type Return;
 
-    fn accept_statement(&mut self, stmt: &Statement) -> Self::Return {
+    fn accept_statement(&mut self, stmt: &BaseStatement<Identifier>) -> Self::Return {
         match stmt {
-            Statement::Expression(position, expr) => {
+            BaseStatement::<Identifier>::Expression(position, expr) => {
                 self.accept_expression_statement(position, expr)
             }
-            Statement::Print(position, expr) => self.accept_print_statement(position, expr),
-            Statement::VarDeclaration(position, identifier, expr) => {
+            BaseStatement::<Identifier>::Print(position, expr) => {
+                self.accept_print_statement(position, expr)
+            }
+            BaseStatement::<Identifier>::VarDeclaration(position, identifier, expr) => {
                 self.accept_var_declaration(position, identifier, expr)
             }
-            Statement::FuncDeclaration(position, name, parameters, body) => {
+            BaseStatement::<Identifier>::FuncDeclaration(position, name, parameters, body) => {
                 self.accept_func_declaration(position, name, parameters, body)
             }
-            Statement::Block(position, statements) => self.accept_block(position, statements),
-            Statement::If(position, condition, then_branch, else_branch) => {
+            BaseStatement::<Identifier>::Block(position, statements) => {
+                self.accept_block(position, statements)
+            }
+            BaseStatement::<Identifier>::If(position, condition, then_branch, else_branch) => {
                 self.accept_if(position, condition, then_branch, else_branch.as_deref())
             }
-            Statement::While(position, expression, body) => {
+            BaseStatement::<Identifier>::While(position, expression, body) => {
                 self.accept_while(position, expression, body)
             }
-            Statement::Return(position, expression) => self.accept_return(position, expression),
+            BaseStatement::<Identifier>::Return(position, expression) => {
+                self.accept_return(position, expression)
+            }
         }
     }
 
     fn accept_expression_statement(
         &mut self,
         position: &Position,
-        expr: &Expression,
+        expr: &BaseExpression<Identifier>,
     ) -> Self::Return;
-    fn accept_print_statement(&mut self, position: &Position, expr: &Expression) -> Self::Return;
+    fn accept_print_statement(
+        &mut self,
+        position: &Position,
+        expr: &BaseExpression<Identifier>,
+    ) -> Self::Return;
     fn accept_var_declaration(
         &mut self,
         position: &Position,
         identifier: &str,
-        expr: &Expression,
+        expr: &BaseExpression<Identifier>,
     ) -> Self::Return;
     fn accept_func_declaration(
         &mut self,
         position: &Position,
         name: &str,
         parameters: &[String],
-        body: &Statement,
+        body: &BaseStatement<Identifier>,
     ) -> Self::Return;
-    fn accept_block(&mut self, position: &Position, statements: &[Statement]) -> Self::Return;
+    fn accept_block(
+        &mut self,
+        position: &Position,
+        statements: &[BaseStatement<Identifier>],
+    ) -> Self::Return;
     fn accept_if(
         &mut self,
         position: &Position,
-        condition: &Expression,
-        then_branch: &Statement,
-        else_branch: Option<&Statement>,
+        condition: &BaseExpression<Identifier>,
+        then_branch: &BaseStatement<Identifier>,
+        else_branch: Option<&BaseStatement<Identifier>>,
     ) -> Self::Return;
     fn accept_while(
         &mut self,
         position: &Position,
-        condition: &Expression,
-        body: &Statement,
+        condition: &BaseExpression<Identifier>,
+        body: &BaseStatement<Identifier>,
     ) -> Self::Return;
-    fn accept_return(&mut self, position: &Position, expr: &Expression) -> Self::Return;
+    fn accept_return(
+        &mut self,
+        position: &Position,
+        expr: &BaseExpression<Identifier>,
+    ) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -100,18 +126,24 @@ impl<'a, 'b> StatementFormatter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
+impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Identifier>
+    for StatementFormatter<'a, 'b>
+{
     type Return = Result<(), fmt::Error>;
 
     fn accept_expression_statement(
         &mut self,
         _position: &Position,
-        expr: &Expression,
+        expr: &BaseExpression<Identifier>,
     ) -> Self::Return {
         writeln!(self.f, "{};", expr)
     }
 
-    fn accept_print_statement(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
+    fn accept_print_statement(
+        &mut self,
+        _position: &Position,
+        expr: &BaseExpression<Identifier>,
+    ) -> Self::Return {
         writeln!(self.f, "print {};", expr)
     }
 
@@ -119,7 +151,7 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
         &mut self,
         _position: &Position,
         identifier: &str,
-        expr: &Expression,
+        expr: &BaseExpression<Identifier>,
     ) -> Self::Return {
         writeln!(self.f, "var {} = {};", identifier, expr)
     }
@@ -129,7 +161,7 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
         _position: &Position,
         name: &str,
         parameters: &[String],
-        body: &Statement,
+        body: &BaseStatement<Identifier>,
     ) -> Self::Return {
         write!(self.f, "fun {}(", name)?;
         for parameter in parameters {
@@ -138,7 +170,11 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
         write!(self.f, ") {}", body)
     }
 
-    fn accept_block(&mut self, _position: &Position, statements: &[Statement]) -> Self::Return {
+    fn accept_block(
+        &mut self,
+        _position: &Position,
+        statements: &[BaseStatement<Identifier>],
+    ) -> Self::Return {
         // TODOTODOTODO - indentation would be nice
         writeln!(self.f, "{{")?;
         for statement in statements {
@@ -150,9 +186,9 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
     fn accept_if(
         &mut self,
         _position: &Position,
-        condition: &Expression,
-        then_branch: &Statement,
-        else_branch: Option<&Statement>,
+        condition: &BaseExpression<Identifier>,
+        then_branch: &BaseStatement<Identifier>,
+        else_branch: Option<&BaseStatement<Identifier>>,
     ) -> Self::Return {
         match else_branch {
             Some(else_branch) => writeln!(
@@ -167,18 +203,22 @@ impl<'a, 'b> StatementVisitor for StatementFormatter<'a, 'b> {
     fn accept_while(
         &mut self,
         _position: &Position,
-        condition: &Expression,
-        body: &Statement,
+        condition: &BaseExpression<Identifier>,
+        body: &BaseStatement<Identifier>,
     ) -> Self::Return {
         writeln!(self.f, "while ({}) {}", condition, body)
     }
 
-    fn accept_return(&mut self, _position: &Position, expr: &Expression) -> Self::Return {
+    fn accept_return(
+        &mut self,
+        _position: &Position,
+        expr: &BaseExpression<Identifier>,
+    ) -> Self::Return {
         writeln!(self.f, "return {};", expr)
     }
 }
 
-impl fmt::Display for Statement {
+impl<Identifier: fmt::Display + fmt::Debug + Clone> fmt::Display for BaseStatement<Identifier> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         StatementFormatter::new(f).accept_statement(self)
     }
