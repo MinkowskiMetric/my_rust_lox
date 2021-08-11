@@ -475,33 +475,39 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         }
     }
 
-    fn call(&mut self) -> LoxResult<Expression> {
-        let callee = self.primary()?;
+    fn finish_call(&mut self, callee: Expression) -> LoxResult<Expression> {
+        let mut arguments = Vec::new();
 
-        if self.consume_next(SimpleToken::LeftParen) {
-            let mut arguments = Vec::new();
+        if !self.match_next(SimpleToken::RightParen) {
+            loop {
+                // Parse a single argument - use assignment so we don't parse comma sequences
+                arguments.push(self.assignment()?);
 
-            if !self.match_next(SimpleToken::RightParen) {
-                loop {
-                    // Parse a single argument - use assignment so we don't parse comma sequences
-                    arguments.push(self.assignment()?);
-
-                    // If there is no comma, we're done
-                    if !self.consume_next(SimpleToken::Comma) {
-                        break;
-                    }
+                // If there is no comma, we're done
+                if !self.consume_next(SimpleToken::Comma) {
+                    break;
                 }
             }
+        }
 
-            self.expect_next(SimpleToken::RightParen)?;
+        self.expect_next(SimpleToken::RightParen)?;
 
-            Ok(Expression::Call(
-                self.current_position(),
-                Box::new(callee),
-                arguments,
-            ))
-        } else {
-            Ok(callee)
+        Ok(Expression::Call(
+            self.current_position(),
+            Box::new(callee),
+            arguments,
+        ))
+    }
+
+    fn call(&mut self) -> LoxResult<Expression> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.consume_next(SimpleToken::LeftParen) {
+                expr = self.finish_call(expr)?
+            } else {
+                break Ok(expr);
+            }
         }
     }
 

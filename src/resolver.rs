@@ -303,7 +303,9 @@ impl<Iter: Iterator<Item = LoxResult<Statement>>> Iterator for ResolverIterator<
     type Item = LoxResult<ResolvedStatement>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|r| r.and_then(|s| self.resolver.accept_statement(&s)))
+        self.iter
+            .next()
+            .map(|r| r.and_then(|s| self.resolver.accept_statement(&s)))
     }
 }
 
@@ -331,6 +333,9 @@ impl<Iter: IntoIterator<Item = LoxResult<Statement>>> Resolvable for Iter {
     type Resolver = ResolverIterator<Iter::IntoIter>;
 
     fn resolve(self) -> Self::Resolver {
-        ResolverIterator { resolver: Resolver::new(), iter: self.into_iter() }
+        ResolverIterator {
+            resolver: Resolver::new(),
+            iter: self.into_iter(),
+        }
     }
 }

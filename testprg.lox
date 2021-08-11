@@ -102,3 +102,13 @@ var a = "global";
   var a = "block";
   showA();
 }
+
+fun returns_function() {
+    fun function() {
+        print "returns function works";
+    }
+
+    return function;
+}
+
+returns_function()();
