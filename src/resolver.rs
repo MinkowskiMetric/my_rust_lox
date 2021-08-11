@@ -294,6 +294,19 @@ impl StatementVisitor<String> for Resolver {
     }
 }
 
+pub struct ResolverIterator<Iter> {
+    resolver: Resolver,
+    iter: Iter,
+}
+
+impl<Iter: Iterator<Item = LoxResult<Statement>>> Iterator for ResolverIterator<Iter> {
+    type Item = LoxResult<ResolvedStatement>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|r| r.and_then(|s| self.resolver.accept_statement(&s)))
+    }
+}
+
 pub fn resolve<'a>(
     stmts: impl 'a + IntoIterator<Item = &'a Statement>,
 ) -> impl Iterator<Item = LoxResult<ResolvedStatement>> + 'a {
@@ -306,4 +319,18 @@ pub fn resolve<'a>(
 pub fn resolve_statement(statement: &Statement) -> LoxResult<ResolvedStatement> {
     let mut resolver = Resolver::new();
     resolver.accept_statement(&statement)
+}
+
+pub trait Resolvable {
+    type Resolver: Iterator<Item = LoxResult<ResolvedStatement>>;
+
+    fn resolve(self) -> Self::Resolver;
+}
+
+impl<Iter: IntoIterator<Item = LoxResult<Statement>>> Resolvable for Iter {
+    type Resolver = ResolverIterator<Iter::IntoIter>;
+
+    fn resolve(self) -> Self::Resolver {
+        ResolverIterator { resolver: Resolver::new(), iter: self.into_iter() }
+    }
 }

@@ -19,10 +19,10 @@ pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};
 pub use parser::{
     parse, BaseExpression, BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, Parser,
     ResolvedExpression, ResolvedIdentifier, ResolvedStatement, Statement, StatementVisitor,
-    UnaryOp,
+    UnaryOp, Parseable
 };
 pub use position::{FilePos, Position};
-pub use resolver::{resolve, resolve_statement};
+pub use resolver::{resolve, resolve_statement, Resolvable};
 pub use value::{Nil, Value};
 
 fn print_error(error: LoxError) {
@@ -42,8 +42,7 @@ fn run_interactive() -> LoxResult<()> {
             parse_data.push_str(&line);
 
             let statements: LoxResult<Vec<_>> = tokenize(&parse_data, "interactive", 1)
-                .and_then(|tokens| parse(tokens).collect::<LoxResult<Vec<_>>>())
-                .and_then(|statements| resolve(statements.iter()).collect::<LoxResult<Vec<_>>>());
+                .and_then(|tokens| tokens.parse().resolve().collect::<LoxResult<Vec<_>>>());
 
             match statements {
                 Err(LoxError::IncompleteExpression(_)) => continue, // Get the next line
@@ -72,8 +71,7 @@ fn run_interactive() -> LoxResult<()> {
 
 fn run_file(input_file: &str) -> LoxResult<()> {
     lexer::tokenize_file(input_file)
-        .and_then(|tokens| parse(tokens).collect())
-        .and_then(|stmts: Vec<_>| resolve(stmts.iter()).collect())
+        .and_then(|tokens| tokens.parse().resolve().collect())
         .and_then(|stmts: Vec<_>| interpret(&stmts))
 }
 

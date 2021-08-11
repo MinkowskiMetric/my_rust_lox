@@ -545,3 +545,17 @@ pub fn parse(
 ) -> impl Iterator<Item = LoxResult<Statement>> {
     Parser::new(tokens.into_iter())
 }
+
+pub trait Parseable {
+    type Parser: Iterator<Item = LoxResult<Statement>>;
+
+    fn parse(self) -> Self::Parser;
+}
+
+impl<Iter: IntoIterator<Item = PositionedToken>> Parseable for Iter {
+    type Parser = Parser<Iter::IntoIter>;
+
+    fn parse(self) -> Self::Parser {
+        Self::Parser::new(self.into_iter())
+    }
+}
