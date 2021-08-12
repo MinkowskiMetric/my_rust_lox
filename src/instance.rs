@@ -18,7 +18,12 @@ impl Instance {
     }
 
     pub fn get(&self, name: &str) -> LoxResult<Value> {
-        match self.properties.borrow().get(name) {
+        match self
+            .properties
+            .borrow()
+            .get(name)
+            .or_else(|| self.class.lookup_method(name))
+        {
             Some(v) => Ok(v.clone()),
             None => Err(LoxError::UnknownVariable(name.to_string())),
         }

@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, Expression, ExpressionVisitor, LogicalBinaryOp, LoxResult, Position,
+    BinaryOp, Expression, ExpressionVisitor, FuncType, LogicalBinaryOp, LoxResult, Position,
     ResolvedExpression, ResolvedIdentifier, ResolvedStatement, Statement, StatementVisitor,
     UnaryOp, Value,
 };
@@ -245,6 +245,7 @@ impl StatementVisitor<String> for Resolver {
     fn accept_func_declaration(
         &mut self,
         position: &Position,
+        func_type: FuncType,
         name: &str,
         parameters: &[String],
         body: &Statement,
@@ -265,6 +266,7 @@ impl StatementVisitor<String> for Resolver {
 
         Ok(ResolvedStatement::FuncDeclaration(
             position.clone(),
+            func_type,
             name.to_string(),
             parameters.to_vec(),
             Box::new(body),
@@ -275,21 +277,23 @@ impl StatementVisitor<String> for Resolver {
         &mut self,
         position: &Position,
         name: &str,
-        _methods: &[Statement],
+        methods: &HashMap<String, Statement>,
     ) -> Self::Return {
         self.declare(name);
         self.define(name);
 
-        /*self.begin_scope();
-
-        let methods = methods.iter().map(|method| self.accept_statement(method)).collect::<LoxResult<Vec<_>>>()?;
-
-        self.end_scope();*/
+        let methods = methods
+            .iter()
+            .map(|(name, method)| {
+                let method = self.accept_statement(method)?;
+                Ok((name.clone(), method))
+            })
+            .collect::<LoxResult<HashMap<_, _>>>()?;
 
         Ok(ResolvedStatement::ClassDeclaration(
             position.clone(),
             name.to_string(),
-            Vec::new(),
+            methods,
         ))
     }
 

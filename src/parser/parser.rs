@@ -1,9 +1,9 @@
 use super::Expression;
 use crate::{
-    BinaryOp, LogicalBinaryOp, LoxError, LoxResult, Nil, Position, PositionedToken, SimpleToken,
-    Statement, Token, UnaryOp, Value,
+    BinaryOp, FuncType, LogicalBinaryOp, LoxError, LoxResult, Nil, Position, PositionedToken,
+    SimpleToken, Statement, Token, UnaryOp, Value,
 };
-use std::iter::Peekable;
+use std::{collections::HashMap, iter::Peekable};
 
 pub struct Parser<Iter: Iterator<Item = PositionedToken>> {
     tokens: Peekable<Iter>,
@@ -138,7 +138,7 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         } else if self.match_next(SimpleToken::Fun) {
             self.func_declaration()
         } else if self.match_next(SimpleToken::Class) {
-            self.class_declatation()
+            self.class_declaration()
         } else {
             self.statement()
         }
@@ -161,10 +161,9 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         Ok(Statement::VarDeclaration(name_pos, name, expr))
     }
 
-    fn func_declaration_impl(&mut self) -> LoxResult<Statement> {
+    fn func_declaration_impl(&mut self, func_type: FuncType, name: String) -> LoxResult<Statement> {
         let start_pos = self.current_position();
 
-        let name = self.advance_identifier()?;
         self.expect_next(SimpleToken::LeftParen)?;
 
         let mut parameters = Vec::new();
@@ -187,6 +186,7 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
 
         Ok(Statement::FuncDeclaration(
             start_pos,
+            func_type,
             name,
             parameters,
             Box::new(body),
@@ -196,24 +196,27 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
     fn func_declaration(&mut self) -> LoxResult<Statement> {
         self.assert_next(SimpleToken::Fun);
 
-        self.func_declaration_impl()
+        let name = self.advance_identifier()?;
+        self.func_declaration_impl(FuncType::Function, name)
     }
 
-    fn method_decaration(&mut self) -> LoxResult<Statement> {
-        self.func_declaration_impl()
+    fn method_decaration(&mut self, name: String) -> LoxResult<Statement> {
+        self.func_declaration_impl(FuncType::Method, name)
     }
 
-    fn class_declatation(&mut self) -> LoxResult<Statement> {
+    fn class_declaration(&mut self) -> LoxResult<Statement> {
         self.assert_next(SimpleToken::Class);
         let start_pos = self.current_position();
 
         let name = self.advance_identifier()?;
         self.expect_next(SimpleToken::LeftBrace)?;
 
-        let mut methods = Vec::new();
+        let mut methods = HashMap::new();
 
         while !self.match_next(SimpleToken::RightBrace) {
-            methods.push(self.method_decaration()?);
+            let name = self.advance_identifier()?;
+
+            methods.insert(name.to_string(), self.method_decaration(name)?);
         }
 
         self.expect_next(SimpleToken::RightBrace)?;

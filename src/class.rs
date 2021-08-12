@@ -1,16 +1,22 @@
-use crate::{Callable, Instance, Interpreter, LoxResult, Value};
-use std::{fmt, rc::Rc};
+use crate::{Callable, FuncType, Instance, Interpreter, LoxResult, Value};
+use std::{collections::HashMap, fmt, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub struct Class {
     name: String,
+    methods: HashMap<String, Value>,
 }
 
 impl Class {
-    pub fn new(name: &str) -> Rc<Self> {
+    pub fn new(name: &str, methods: HashMap<String, Value>) -> Rc<Self> {
         Rc::new(Self {
             name: name.to_string(),
+            methods,
         })
+    }
+
+    pub fn lookup_method(&self, name: &str) -> Option<&Value> {
+        self.methods.get(name)
     }
 }
 
@@ -21,6 +27,9 @@ impl fmt::Display for Class {
 }
 
 impl Callable for Class {
+    fn func_type(&self) -> FuncType {
+        FuncType::Function
+    }
     fn arity(&self) -> usize {
         0
     }

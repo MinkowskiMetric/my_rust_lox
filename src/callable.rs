@@ -1,7 +1,8 @@
-use crate::{EnvironmentRef, Interpreter, LoxResult, ResolvedStatement, Value};
+use crate::{EnvironmentRef, FuncType, Interpreter, LoxResult, ResolvedStatement, Value};
 use std::{fmt, rc::Rc};
 
 pub trait Callable: fmt::Debug + fmt::Display {
+    fn func_type(&self) -> FuncType;
     fn arity(&self) -> usize;
 
     fn call(self: Rc<Self>, interpreter: &mut Interpreter, arguments: &[Value])
@@ -21,6 +22,10 @@ impl<F: Fn(&mut Interpreter, &[Value]) -> LoxResult<Value>> NativeCallable<F> {
 }
 
 impl<F: Fn(&mut Interpreter, &[Value]) -> LoxResult<Value>> Callable for NativeCallable<F> {
+    fn func_type(&self) -> FuncType {
+        FuncType::Function
+    }
+
     fn arity(&self) -> usize {
         self.arity
     }
@@ -47,14 +52,21 @@ impl<F: Fn(&mut Interpreter, &[Value]) -> LoxResult<Value>> fmt::Display for Nat
 
 #[derive(Debug, Clone)]
 pub struct ScriptCallable {
+    func_type: FuncType,
     parameters: Vec<String>,
     body: ResolvedStatement,
     env: EnvironmentRef,
 }
 
 impl ScriptCallable {
-    pub fn new(parameters: &[String], body: &ResolvedStatement, env: &EnvironmentRef) -> Rc<Self> {
+    pub fn new(
+        func_type: FuncType,
+        parameters: &[String],
+        body: &ResolvedStatement,
+        env: &EnvironmentRef,
+    ) -> Rc<Self> {
         Rc::new(Self {
+            func_type,
             parameters: parameters.to_vec(),
             body: body.clone(),
             env: env.clone(),
@@ -63,6 +75,10 @@ impl ScriptCallable {
 }
 
 impl Callable for ScriptCallable {
+    fn func_type(&self) -> FuncType {
+        self.func_type
+    }
+
     fn arity(&self) -> usize {
         self.parameters.len()
     }

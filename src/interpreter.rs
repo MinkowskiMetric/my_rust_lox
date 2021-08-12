@@ -1,5 +1,5 @@
 use crate::{
-    BinaryOp, Callable, Class, ExpressionVisitor, InstanceRef, LogicalBinaryOp, LoxError,
+    BinaryOp, Callable, Class, ExpressionVisitor, FuncType, InstanceRef, LogicalBinaryOp, LoxError,
     LoxResult, NativeCallable, Nil, Position, ResolvedExpression, ResolvedIdentifier,
     ResolvedStatement, ScriptCallable, StatementVisitor, UnaryOp, UnwindableLoxError,
     UnwindableLoxResult, Value,
@@ -452,11 +452,12 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
     fn accept_func_declaration(
         &mut self,
         _position: &Position,
+        func_type: FuncType,
         identifier: &str,
         parameters: &[String],
         body: &ResolvedStatement,
     ) -> Self::Return {
-        let value = ScriptCallable::new(parameters, body, self.get_env_ref()).into();
+        let value = ScriptCallable::new(func_type, parameters, body, self.get_env_ref()).into();
         self.declare_variable(identifier, value)?;
         Ok(())
     }
@@ -465,9 +466,25 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
         &mut self,
         _position: &Position,
         name: &str,
-        _methods: &[ResolvedStatement],
+        methods: &HashMap<String, ResolvedStatement>,
     ) -> Self::Return {
-        let value = Class::new(name).into();
+        let methods = methods
+            .iter()
+            .map(|(name, stmt)| match stmt {
+                ResolvedStatement::FuncDeclaration(_, func_type, _, parameters, body) => (
+                    name.to_string(),
+                    Value::from(ScriptCallable::new(
+                        *func_type,
+                        parameters,
+                        body,
+                        self.get_env_ref(),
+                    )),
+                ),
+                stmt => panic!("Unexpected statement {:?} in class instantiation", stmt),
+            })
+            .collect::<HashMap<_, _>>();
+
+        let value = Class::new(name, methods).into();
         self.declare_variable(name, value)?;
         Ok(())
     }

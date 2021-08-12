@@ -116,6 +116,7 @@ returns_function()();
 class test_class {
     poo() {
         print "poo";
+        return "you called poo";
     }
 }
 
@@ -123,3 +124,4 @@ print test_class;
 var object = test_class();
 object.hello = "hello";
 print object.hello;
+print object.poo();

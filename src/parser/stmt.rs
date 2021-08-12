@@ -1,13 +1,28 @@
 use crate::{BaseExpression, Position, ResolvedIdentifier};
-use std::fmt;
+use std::{collections::HashMap, fmt};
+
+#[derive(Debug, Clone, Copy)]
+pub enum FuncType {
+    Function,
+    Method,
+}
+
+impl fmt::Display for FuncType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::Function => write!(f, "function"),
+            Self::Method => write!(f, "method"),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum BaseStatement<Identifier: fmt::Display + fmt::Debug + Clone> {
     Expression(Position, BaseExpression<Identifier>),
     Print(Position, BaseExpression<Identifier>),
     VarDeclaration(Position, String, BaseExpression<Identifier>),
-    FuncDeclaration(Position, String, Vec<String>, Box<Self>),
-    ClassDeclaration(Position, String, Vec<Self>),
+    FuncDeclaration(Position, FuncType, String, Vec<String>, Box<Self>),
+    ClassDeclaration(Position, String, HashMap<String, Self>),
     Block(Position, Vec<Self>),
     If(
         Position,
@@ -52,9 +67,13 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
             BaseStatement::<Identifier>::VarDeclaration(position, identifier, expr) => {
                 self.accept_var_declaration(position, identifier, expr)
             }
-            BaseStatement::<Identifier>::FuncDeclaration(position, name, parameters, body) => {
-                self.accept_func_declaration(position, name, parameters, body)
-            }
+            BaseStatement::<Identifier>::FuncDeclaration(
+                position,
+                func_type,
+                name,
+                parameters,
+                body,
+            ) => self.accept_func_declaration(position, *func_type, name, parameters, body),
             BaseStatement::<Identifier>::ClassDeclaration(position, name, methods) => {
                 self.accept_class_declaration(position, name, methods)
             }
@@ -92,6 +111,7 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
     fn accept_func_declaration(
         &mut self,
         position: &Position,
+        func_type: FuncType,
         name: &str,
         parameters: &[String],
         body: &BaseStatement<Identifier>,
@@ -100,7 +120,7 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
         &mut self,
         position: &Position,
         name: &str,
-        methods: &[BaseStatement<Identifier>],
+        methods: &HashMap<String, BaseStatement<Identifier>>,
     ) -> Self::Return;
     fn accept_block(
         &mut self,
@@ -170,11 +190,16 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
     fn accept_func_declaration(
         &mut self,
         _position: &Position,
+        func_type: FuncType,
         name: &str,
         parameters: &[String],
         body: &BaseStatement<Identifier>,
     ) -> Self::Return {
-        write!(self.f, "fun {}(", name)?;
+        match func_type {
+            FuncType::Function => write!(self.f, "fun {} (", name)?,
+            FuncType::Method => write!(self.f, "{} (", name)?,
+        };
+
         for parameter in parameters {
             write!(self.f, "{}, ", parameter)?;
         }
@@ -185,10 +210,10 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
         &mut self,
         _position: &Position,
         name: &str,
-        methods: &[BaseStatement<Identifier>],
+        methods: &HashMap<String, BaseStatement<Identifier>>,
     ) -> Self::Return {
         writeln!(self.f, "class {} {{", name)?;
-        for method in methods {
+        for (_, method) in methods {
             write!(self.f, "{}", method)?;
         }
         writeln!(self.f, "}};")

@@ -7,4 +7,4 @@ pub use expr::{
     ResolvedIdentifier, UnaryOp,
 };
 pub use parser::{parse, Parseable, Parser};
-pub use stmt::{ResolvedStatement, Statement, StatementVisitor};
+pub use stmt::{FuncType, ResolvedStatement, Statement, StatementVisitor};
