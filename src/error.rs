@@ -16,6 +16,8 @@ pub enum LoxError {
     MissingIdentifier(Position),
     UnknownVariable(String),
     UseVariableInInitializer(Position, String),
+    DuplicateVariable(String, Position, Position),
+    ThisOutsideMethod(Position),
 }
 
 impl From<io::Error> for LoxError {
@@ -55,6 +57,12 @@ impl fmt::Display for LoxError {
             Self::UseVariableInInitializer(name, pos) => {
                 write!(f, "Used variable {} in initializer at {}", name, pos)
             }
+            Self::DuplicateVariable(name, original_pos, new_pos) => write!(
+                f,
+                "Duplicate variable {} at {} originally declared at {}",
+                name, new_pos, original_pos
+            ),
+            Self::ThisOutsideMethod(pos) => write!(f, "this used outside method at {}", pos),
 
             Self::TokenizationError(errs) => {
                 for err in errs {

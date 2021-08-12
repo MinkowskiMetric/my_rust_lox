@@ -1,17 +1,27 @@
 use crate::{
-    BinaryOp, Expression, ExpressionVisitor, FuncType, LogicalBinaryOp, LoxResult, Position,
-    ResolvedExpression, ResolvedIdentifier, ResolvedStatement, Statement, StatementVisitor,
-    UnaryOp, Value,
+    BinaryOp, Expression, ExpressionVisitor, FuncType, LogicalBinaryOp, LoxError, LoxResult,
+    Position, ResolvedExpression, ResolvedIdentifier, ResolvedStatement, Statement,
+    StatementVisitor, UnaryOp, Value,
 };
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, Debug)]
+enum ClassType {
+    Class,
+    None,
+}
+
 struct Resolver {
-    scopes: Vec<HashMap<String, bool>>,
+    scopes: Vec<HashMap<String, (Position, bool)>>,
+    class_type: ClassType,
 }
 
 impl Resolver {
     fn new() -> Self {
-        Self { scopes: Vec::new() }
+        Self {
+            scopes: Vec::new(),
+            class_type: ClassType::None,
+        }
     }
 }
 
@@ -24,19 +34,32 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, name: &str) {
-        match self.scopes.last_mut() {
+    fn check_duplicate(&self, duplicate_pos: &Position, name: &str) -> LoxResult<()> {
+        match self.scopes.iter().rev().filter_map(|m| m.get(name)).next() {
+            Some((original_pos, _)) => Err(LoxError::DuplicateVariable(
+                name.to_string(),
+                original_pos.clone(),
+                duplicate_pos.clone(),
+            )),
+            None => Ok(()),
+        }
+    }
+
+    fn declare(&mut self, pos: &Position, name: &str) -> LoxResult<()> {
+        self.check_duplicate(pos, name)?;
+
+        Ok(match self.scopes.last_mut() {
             Some(scope) => {
-                scope.insert(name.to_string(), false);
+                scope.insert(name.to_string(), (pos.clone(), false));
             }
             None => (),
-        }
+        })
     }
 
     fn define(&mut self, name: &str) {
         match self.scopes.last_mut() {
             Some(scope) => {
-                *scope.get_mut(name).expect("Should declare before define") = true;
+                scope.get_mut(name).expect("Should declare before define").1 = true;
             }
 
             None => (),
@@ -49,6 +72,13 @@ impl Resolver {
             .find(|depth| self.scopes[*depth].contains_key(name))
             .map(|depth| ResolvedIdentifier::scoped_identifier(name, self.scopes.len() - 1 - depth))
             .unwrap_or_else(|| ResolvedIdentifier::global_identifier(name))
+    }
+
+    fn resolve_this(&mut self, pos: &Position) -> LoxResult<ResolvedIdentifier> {
+        match self.class_type {
+            ClassType::Class => Ok(self.resolve_local("this")),
+            ClassType::None => Err(LoxError::ThisOutsideMethod(pos.clone())),
+        }
     }
 }
 
@@ -203,8 +233,8 @@ impl ExpressionVisitor<String> for Resolver {
         ))
     }
 
-    fn accept_this(&mut self, position: &Position, identifier: &String) -> Self::Return {
-        let this = self.resolve_local(identifier);
+    fn accept_this(&mut self, position: &Position, _identifier: &String) -> Self::Return {
+        let this = self.resolve_this(position)?;
         Ok(ResolvedExpression::This(position.clone(), this))
     }
 }
@@ -234,7 +264,7 @@ impl StatementVisitor<String> for Resolver {
         identifier: &str,
         expr: &Expression,
     ) -> Self::Return {
-        self.declare(identifier);
+        self.declare(position, identifier)?;
 
         let expr = self.accept_expression(expr)?;
 
@@ -255,13 +285,13 @@ impl StatementVisitor<String> for Resolver {
         parameters: &[String],
         body: &Statement,
     ) -> Self::Return {
-        self.declare(name);
+        self.declare(position, name)?;
         self.define(name);
 
         self.begin_scope();
 
         for param in parameters {
-            self.declare(param);
+            self.declare(position, param)?;
             self.define(param);
         }
 
@@ -284,28 +314,36 @@ impl StatementVisitor<String> for Resolver {
         name: &str,
         methods: &HashMap<String, Statement>,
     ) -> Self::Return {
-        self.declare(name);
+        self.declare(position, name)?;
         self.define(name);
 
         self.begin_scope();
-        self.declare("this");
+        self.declare(position, "this")?;
         self.define("this");
 
-        let methods = methods
-            .iter()
-            .map(|(name, method)| {
-                let method = self.accept_statement(method)?;
-                Ok((name.clone(), method))
-            })
-            .collect::<LoxResult<HashMap<_, _>>>()?;
+        let original_class_type = self.class_type;
+        self.class_type = ClassType::Class;
 
-        self.end_scope();
+        let ret = (|| {
+            let methods = methods
+                .iter()
+                .map(|(name, method)| {
+                    let method = self.accept_statement(method)?;
+                    Ok((name.clone(), method))
+                })
+                .collect::<LoxResult<HashMap<_, _>>>()?;
 
-        Ok(ResolvedStatement::ClassDeclaration(
-            position.clone(),
-            name.to_string(),
-            methods,
-        ))
+            self.end_scope();
+
+            Ok(ResolvedStatement::ClassDeclaration(
+                position.clone(),
+                name.to_string(),
+                methods,
+            ))
+        })();
+
+        self.class_type = original_class_type;
+        ret
     }
 
     fn accept_block(&mut self, position: &Position, statements: &[Statement]) -> Self::Return {
