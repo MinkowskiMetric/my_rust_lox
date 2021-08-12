@@ -169,6 +169,39 @@ impl ExpressionVisitor<String> for Resolver {
             arguments,
         ))
     }
+
+    fn accept_get(
+        &mut self,
+        position: &Position,
+        expr: &Expression,
+        name: &String,
+    ) -> Self::Return {
+        let expr = self.accept_expression(expr)?;
+
+        Ok(ResolvedExpression::Get(
+            position.clone(),
+            Box::new(expr),
+            name.to_string(),
+        ))
+    }
+
+    fn accept_set(
+        &mut self,
+        position: &Position,
+        expr: &Expression,
+        name: &String,
+        value: &Expression,
+    ) -> Self::Return {
+        let expr = self.accept_expression(expr)?;
+        let value = self.accept_expression(value)?;
+
+        Ok(ResolvedExpression::Set(
+            position.clone(),
+            Box::new(expr),
+            name.to_string(),
+            Box::new(value),
+        ))
+    }
 }
 
 impl StatementVisitor<String> for Resolver {
@@ -235,6 +268,28 @@ impl StatementVisitor<String> for Resolver {
             name.to_string(),
             parameters.to_vec(),
             Box::new(body),
+        ))
+    }
+
+    fn accept_class_declaration(
+        &mut self,
+        position: &Position,
+        name: &str,
+        _methods: &[Statement],
+    ) -> Self::Return {
+        self.declare(name);
+        self.define(name);
+
+        /*self.begin_scope();
+
+        let methods = methods.iter().map(|method| self.accept_statement(method)).collect::<LoxResult<Vec<_>>>()?;
+
+        self.end_scope();*/
+
+        Ok(ResolvedStatement::ClassDeclaration(
+            position.clone(),
+            name.to_string(),
+            Vec::new(),
         ))
     }
 

@@ -1,12 +1,13 @@
 use crate::{
-    make_native_function, make_script_function, BinaryOp, CallableReference, ExpressionVisitor,
-    LogicalBinaryOp, LoxError, LoxResult, Nil, Position, ResolvedExpression, ResolvedIdentifier,
-    ResolvedStatement, StatementVisitor, UnaryOp, UnwindableLoxError, UnwindableLoxResult, Value,
+    BinaryOp, Callable, Class, ExpressionVisitor, InstanceRef, LogicalBinaryOp, LoxError,
+    LoxResult, NativeCallable, Nil, Position, ResolvedExpression, ResolvedIdentifier,
+    ResolvedStatement, ScriptCallable, StatementVisitor, UnaryOp, UnwindableLoxError,
+    UnwindableLoxResult, Value,
 };
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     rc::Rc,
 };
 
@@ -121,7 +122,10 @@ impl Interpreter {
     }
 
     fn initialize_globals(&mut self) -> LoxResult<()> {
-        self.declare_global("add_two_numbers", make_native_function(2, add_two_numbers))?;
+        self.declare_global(
+            "add_two_numbers",
+            NativeCallable::new(add_two_numbers, 2).into(),
+        )?;
 
         Ok(())
     }
@@ -367,20 +371,48 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
         arguments: &[ResolvedExpression],
     ) -> Self::Return {
         let callee = self.accept_expression(callee)?;
-        match CallableReference::try_from(&callee) {
+        match Rc::<dyn Callable>::try_from(callee) {
             Ok(callee) => {
                 if callee.arity() == arguments.len() {
                     let arguments = arguments
                         .iter()
                         .map(|a| self.accept_expression(a))
                         .collect::<LoxResult<Vec<_>>>()?;
-                    callee.call(self, &arguments)
+                    callee.clone().call(self, &arguments)
                 } else {
                     todo!("This is a runtime error. How do we do those?");
                 }
             }
             Err(e) => Err(e),
         }
+    }
+
+    fn accept_get(
+        &mut self,
+        _position: &Position,
+        object: &ResolvedExpression,
+        name: &String,
+    ) -> Self::Return {
+        let object = self.accept_expression(object)?;
+        let object: &InstanceRef = &object.try_into()?;
+
+        object.get(name)
+    }
+
+    fn accept_set(
+        &mut self,
+        _position: &Position,
+        object: &ResolvedExpression,
+        name: &String,
+        value: &ResolvedExpression,
+    ) -> Self::Return {
+        let object = self.accept_expression(object)?;
+        let object: &InstanceRef = &object.try_into()?;
+
+        let value = self.accept_expression(value)?;
+
+        object.set(name, &value)?;
+        Ok(value)
     }
 }
 
@@ -424,8 +456,19 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
         parameters: &[String],
         body: &ResolvedStatement,
     ) -> Self::Return {
-        let value = make_script_function(parameters, body, self.get_env_ref())?;
+        let value = ScriptCallable::new(parameters, body, self.get_env_ref()).into();
         self.declare_variable(identifier, value)?;
+        Ok(())
+    }
+
+    fn accept_class_declaration(
+        &mut self,
+        _position: &Position,
+        name: &str,
+        _methods: &[ResolvedStatement],
+    ) -> Self::Return {
+        let value = Class::new(name).into();
+        self.declare_variable(name, value)?;
         Ok(())
     }
 

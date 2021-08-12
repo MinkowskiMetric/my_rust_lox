@@ -137,6 +137,8 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
             self.var_declaration()
         } else if self.match_next(SimpleToken::Fun) {
             self.func_declaration()
+        } else if self.match_next(SimpleToken::Class) {
+            self.class_declatation()
         } else {
             self.statement()
         }
@@ -159,8 +161,7 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         Ok(Statement::VarDeclaration(name_pos, name, expr))
     }
 
-    fn func_declaration(&mut self) -> LoxResult<Statement> {
-        self.assert_next(SimpleToken::Fun);
+    fn func_declaration_impl(&mut self) -> LoxResult<Statement> {
         let start_pos = self.current_position();
 
         let name = self.advance_identifier()?;
@@ -190,6 +191,34 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
             parameters,
             Box::new(body),
         ))
+    }
+
+    fn func_declaration(&mut self) -> LoxResult<Statement> {
+        self.assert_next(SimpleToken::Fun);
+
+        self.func_declaration_impl()
+    }
+
+    fn method_decaration(&mut self) -> LoxResult<Statement> {
+        self.func_declaration_impl()
+    }
+
+    fn class_declatation(&mut self) -> LoxResult<Statement> {
+        self.assert_next(SimpleToken::Class);
+        let start_pos = self.current_position();
+
+        let name = self.advance_identifier()?;
+        self.expect_next(SimpleToken::LeftBrace)?;
+
+        let mut methods = Vec::new();
+
+        while !self.match_next(SimpleToken::RightBrace) {
+            methods.push(self.method_decaration()?);
+        }
+
+        self.expect_next(SimpleToken::RightBrace)?;
+
+        Ok(Statement::ClassDeclaration(start_pos, name, methods))
     }
 
     fn statement(&mut self) -> LoxResult<Statement> {
@@ -365,24 +394,29 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
     }
 
     fn assignment(&mut self) -> LoxResult<Expression> {
-        let expr = self.logic_or()?;
+        match self.logic_or()? {
+            Expression::VariableGet(_, name) if self.consume_next(SimpleToken::Equal) => {
+                let value = self.assignment()?;
 
-        match &expr {
-            Expression::VariableGet(_, name) => {
-                if self.consume_next(SimpleToken::Equal) {
-                    let value = self.assignment()?;
-
-                    Ok(Expression::Assignment(
-                        self.current_position(),
-                        name.to_string(),
-                        Box::new(value),
-                    ))
-                } else {
-                    Ok(expr)
-                }
+                Ok(Expression::Assignment(
+                    self.current_position(),
+                    name.to_string(),
+                    Box::new(value),
+                ))
             }
 
-            _ => Ok(expr),
+            Expression::Get(_, expr, name) if self.consume_next(SimpleToken::Equal) => {
+                let value = self.assignment()?;
+
+                Ok(Expression::Set(
+                    self.current_position(),
+                    expr,
+                    name.to_string(),
+                    Box::new(value),
+                ))
+            }
+
+            other => Ok(other),
         }
     }
 
@@ -505,6 +539,9 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         loop {
             if self.consume_next(SimpleToken::LeftParen) {
                 expr = self.finish_call(expr)?
+            } else if self.consume_next(SimpleToken::Dot) {
+                let name = self.advance_identifier()?;
+                expr = Expression::Get(expr.position().clone(), Box::new(expr), name);
             } else {
                 break Ok(expr);
             }

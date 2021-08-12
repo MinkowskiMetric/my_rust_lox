@@ -112,3 +112,14 @@ fun returns_function() {
 }
 
 returns_function()();
+
+class test_class {
+    poo() {
+        print "poo";
+    }
+}
+
+print test_class;
+var object = test_class();
+object.hello = "hello";
+print object.hello;

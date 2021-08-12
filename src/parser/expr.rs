@@ -76,6 +76,8 @@ pub enum BaseExpression<Identifier: fmt::Display + fmt::Debug + Clone> {
     VariableGet(Position, Identifier),
     Assignment(Position, Identifier, Box<Self>),
     Call(Position, Box<Self>, Vec<Self>),
+    Get(Position, Box<Self>, String),
+    Set(Position, Box<Self>, String, Box<Self>),
 }
 
 impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
@@ -88,7 +90,9 @@ impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
             | Self::Ternary(pos, ..)
             | Self::VariableGet(pos, ..)
             | Self::Assignment(pos, ..)
-            | Self::Call(pos, ..) => pos,
+            | Self::Call(pos, ..)
+            | Self::Get(pos, ..)
+            | Self::Set(pos, ..) => pos,
         }
     }
 }
@@ -153,6 +157,12 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
             BaseExpression::<Identifier>::Call(position, callee, arguments) => {
                 self.accept_call(position, callee, arguments)
             }
+            BaseExpression::<Identifier>::Get(position, expr, name) => {
+                self.accept_get(position, expr, name)
+            }
+            BaseExpression::<Identifier>::Set(position, expr, name, value) => {
+                self.accept_set(position, expr, name, value)
+            }
         }
     }
 
@@ -196,6 +206,19 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
         position: &Position,
         callee: &BaseExpression<Identifier>,
         arguments: &[BaseExpression<Identifier>],
+    ) -> Self::Return;
+    fn accept_get(
+        &mut self,
+        position: &Position,
+        expr: &BaseExpression<Identifier>,
+        name: &String,
+    ) -> Self::Return;
+    fn accept_set(
+        &mut self,
+        position: &Position,
+        expr: &BaseExpression<Identifier>,
+        name: &String,
+        value: &BaseExpression<Identifier>,
     ) -> Self::Return;
 }
 
@@ -286,6 +309,25 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Id
         }
 
         write!(self.f, " )")
+    }
+
+    fn accept_get(
+        &mut self,
+        _position: &Position,
+        expr: &BaseExpression<Identifier>,
+        name: &String,
+    ) -> Self::Return {
+        write!(self.f, "{}.{}", expr, name)
+    }
+
+    fn accept_set(
+        &mut self,
+        _position: &Position,
+        expr: &BaseExpression<Identifier>,
+        name: &String,
+        value: &BaseExpression<Identifier>,
+    ) -> Self::Return {
+        write!(self.f, "{}.{} = {}", expr, name, value)
     }
 }
 

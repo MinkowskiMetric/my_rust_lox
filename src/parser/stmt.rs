@@ -7,6 +7,7 @@ pub enum BaseStatement<Identifier: fmt::Display + fmt::Debug + Clone> {
     Print(Position, BaseExpression<Identifier>),
     VarDeclaration(Position, String, BaseExpression<Identifier>),
     FuncDeclaration(Position, String, Vec<String>, Box<Self>),
+    ClassDeclaration(Position, String, Vec<Self>),
     Block(Position, Vec<Self>),
     If(
         Position,
@@ -25,6 +26,7 @@ impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseStatement<Identifier> {
             | Self::Print(pos, ..)
             | Self::VarDeclaration(pos, ..)
             | Self::FuncDeclaration(pos, ..)
+            | Self::ClassDeclaration(pos, ..)
             | Self::Block(pos, ..)
             | Self::If(pos, ..)
             | Self::While(pos, ..)
@@ -52,6 +54,9 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
             }
             BaseStatement::<Identifier>::FuncDeclaration(position, name, parameters, body) => {
                 self.accept_func_declaration(position, name, parameters, body)
+            }
+            BaseStatement::<Identifier>::ClassDeclaration(position, name, methods) => {
+                self.accept_class_declaration(position, name, methods)
             }
             BaseStatement::<Identifier>::Block(position, statements) => {
                 self.accept_block(position, statements)
@@ -90,6 +95,12 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
         name: &str,
         parameters: &[String],
         body: &BaseStatement<Identifier>,
+    ) -> Self::Return;
+    fn accept_class_declaration(
+        &mut self,
+        position: &Position,
+        name: &str,
+        methods: &[BaseStatement<Identifier>],
     ) -> Self::Return;
     fn accept_block(
         &mut self,
@@ -168,6 +179,19 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
             write!(self.f, "{}, ", parameter)?;
         }
         write!(self.f, ") {}", body)
+    }
+
+    fn accept_class_declaration(
+        &mut self,
+        _position: &Position,
+        name: &str,
+        methods: &[BaseStatement<Identifier>],
+    ) -> Self::Return {
+        writeln!(self.f, "class {} {{", name)?;
+        for method in methods {
+            write!(self.f, "{}", method)?;
+        }
+        writeln!(self.f, "}};")
     }
 
     fn accept_block(

@@ -1,4 +1,4 @@
-use crate::{BValue, Callable, CallableReference, LoxError};
+use crate::{BValue, Callable, InstanceRef, LoxError};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
@@ -24,11 +24,28 @@ impl PartialEq<CallableHolder> for CallableHolder {
     }
 }
 
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct InstanceHolder(InstanceRef);
+
+impl fmt::Display for InstanceHolder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq<InstanceHolder> for InstanceHolder {
+    fn eq(&self, _rhs: &Self) -> bool {
+        todo!("I haven't implemented equality for instance yet - I probably can if I need to. This goes away when I get an object model and a garbage collector")
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     BValue(BValue),
     String(String),
     Callable(CallableHolder),
+    Instance(InstanceHolder),
 }
 
 impl fmt::Display for Value {
@@ -37,6 +54,7 @@ impl fmt::Display for Value {
             Value::BValue(val) => val.fmt(f),
             Value::String(s) => write!(f, "{}", s),
             Value::Callable(func) => write!(f, "{}", func),
+            Value::Instance(func) => write!(f, "{}", func),
         }
     }
 }
@@ -126,19 +144,47 @@ impl<'a> TryFrom<&'a Value> for &'a str {
     }
 }
 
-impl<T: 'static + Callable> From<T> for Value {
-    fn from(t: T) -> Self {
-        Self::Callable(CallableHolder(Rc::new(t)))
+impl<T: 'static + Callable> From<Rc<T>> for Value {
+    fn from(t: Rc<T>) -> Self {
+        Self::Callable(CallableHolder(t))
     }
 }
 
-impl<'a> TryFrom<&'a Value> for CallableReference<'a> {
+impl TryFrom<Value> for Rc<dyn Callable> {
+    type Error = LoxError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Callable(callable) => Ok(callable.0),
+            v => Err(LoxError::ValueError(v, "callable".into())),
+        }
+    }
+}
+
+impl From<InstanceRef> for Value {
+    fn from(t: InstanceRef) -> Self {
+        Self::Instance(InstanceHolder(t))
+    }
+}
+
+impl TryFrom<Value> for InstanceRef {
+    type Error = LoxError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Instance(instance) => Ok(instance.0),
+            v => Err(LoxError::ValueError(v, "instance".into())),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Value> for &'a InstanceRef {
     type Error = LoxError;
 
     fn try_from(v: &'a Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Callable(c) => Ok(c.0.as_ref()),
-            v => Err(LoxError::ValueError(v.clone(), "callable".into())),
+            Value::Instance(instance) => Ok(&instance.0),
+            v => Err(LoxError::ValueError(v.clone(), "instance".into())),
         }
     }
 }
