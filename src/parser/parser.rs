@@ -566,6 +566,10 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
             Some(Token::Simple(SimpleToken::False)) => {
                 Ok(Expression::Literal(self.current_position(), false.into()))
             }
+            Some(Token::Simple(SimpleToken::This)) => Ok(Expression::This(
+                self.current_position(),
+                "this".to_string(),
+            )),
             Some(Token::Simple(SimpleToken::EndOfFile)) => {
                 Err(LoxError::IncompleteExpression(self.current_position()))
             }

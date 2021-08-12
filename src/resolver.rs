@@ -202,6 +202,11 @@ impl ExpressionVisitor<String> for Resolver {
             Box::new(value),
         ))
     }
+
+    fn accept_this(&mut self, position: &Position, identifier: &String) -> Self::Return {
+        let this = self.resolve_local(identifier);
+        Ok(ResolvedExpression::This(position.clone(), this))
+    }
 }
 
 impl StatementVisitor<String> for Resolver {
@@ -282,6 +287,10 @@ impl StatementVisitor<String> for Resolver {
         self.declare(name);
         self.define(name);
 
+        self.begin_scope();
+        self.declare("this");
+        self.define("this");
+
         let methods = methods
             .iter()
             .map(|(name, method)| {
@@ -289,6 +298,8 @@ impl StatementVisitor<String> for Resolver {
                 Ok((name.clone(), method))
             })
             .collect::<LoxResult<HashMap<_, _>>>()?;
+
+        self.end_scope();
 
         Ok(ResolvedStatement::ClassDeclaration(
             position.clone(),

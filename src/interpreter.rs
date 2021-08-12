@@ -26,7 +26,7 @@ fn add_two_numbers(_interpreter: &mut Interpreter, arguments: &[Value]) -> LoxRe
 }
 
 impl Environment {
-    fn new(enclosing: Option<EnvironmentRef>) -> Self {
+    pub fn new(enclosing: Option<EnvironmentRef>) -> Self {
         Self {
             enclosing,
             variables: HashMap::new(),
@@ -396,7 +396,7 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
         let object = self.accept_expression(object)?;
         let object: &InstanceRef = &object.try_into()?;
 
-        object.get(name)
+        object.clone().get(name)
     }
 
     fn accept_set(
@@ -413,6 +413,10 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
 
         object.set(name, &value)?;
         Ok(value)
+    }
+
+    fn accept_this(&mut self, _position: &Position, name: &ResolvedIdentifier) -> Self::Return {
+        self.get_variable(name)
     }
 }
 
@@ -468,23 +472,7 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
         name: &str,
         methods: &HashMap<String, ResolvedStatement>,
     ) -> Self::Return {
-        let methods = methods
-            .iter()
-            .map(|(name, stmt)| match stmt {
-                ResolvedStatement::FuncDeclaration(_, func_type, _, parameters, body) => (
-                    name.to_string(),
-                    Value::from(ScriptCallable::new(
-                        *func_type,
-                        parameters,
-                        body,
-                        self.get_env_ref(),
-                    )),
-                ),
-                stmt => panic!("Unexpected statement {:?} in class instantiation", stmt),
-            })
-            .collect::<HashMap<_, _>>();
-
-        let value = Class::new(name, methods).into();
+        let value = Class::new(name, methods.clone(), self.get_env_ref()).into();
         self.declare_variable(name, value)?;
         Ok(())
     }

@@ -17,16 +17,21 @@ impl Instance {
         })
     }
 
-    pub fn get(&self, name: &str) -> LoxResult<Value> {
-        match self
-            .properties
-            .borrow()
-            .get(name)
-            .or_else(|| self.class.lookup_method(name))
-        {
-            Some(v) => Ok(v.clone()),
-            None => Err(LoxError::UnknownVariable(name.to_string())),
-        }
+    pub fn get(self: InstanceRef, name: &str) -> LoxResult<Value> {
+        let member = self.properties.borrow().get(name).cloned();
+
+        let member = member.or_else(|| match self.class.lookup_method(name) {
+            Some(method) => {
+                let method = Value::from(method.bind(self.clone()));
+                self.properties
+                    .borrow_mut()
+                    .insert(name.to_string(), method.clone());
+                Some(method)
+            }
+            None => None,
+        });
+
+        member.ok_or_else(|| LoxError::UnknownVariable(name.to_string()))
     }
 
     pub fn set(&self, name: &str, value: &Value) -> LoxResult<()> {

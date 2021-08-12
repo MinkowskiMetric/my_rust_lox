@@ -1,22 +1,36 @@
-use crate::{Callable, FuncType, Instance, Interpreter, LoxResult, Value};
+use crate::{
+    Callable, EnvironmentRef, FuncType, Instance, Interpreter, LoxResult, ResolvedStatement,
+    ScriptCallable, Value,
+};
 use std::{collections::HashMap, fmt, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub struct Class {
     name: String,
-    methods: HashMap<String, Value>,
+    methods: HashMap<String, ResolvedStatement>,
+    env: EnvironmentRef,
 }
 
 impl Class {
-    pub fn new(name: &str, methods: HashMap<String, Value>) -> Rc<Self> {
+    pub fn new(
+        name: &str,
+        methods: HashMap<String, ResolvedStatement>,
+        env: &EnvironmentRef,
+    ) -> Rc<Self> {
         Rc::new(Self {
             name: name.to_string(),
             methods,
+            env: env.clone(),
         })
     }
 
-    pub fn lookup_method(&self, name: &str) -> Option<&Value> {
-        self.methods.get(name)
+    pub fn lookup_method(&self, name: &str) -> Option<Rc<ScriptCallable>> {
+        self.methods.get(name).map(|stmt| match stmt {
+            ResolvedStatement::FuncDeclaration(_, func_type, _, parameters, body) => {
+                ScriptCallable::new(*func_type, parameters, body, &self.env)
+            }
+            stmt => panic!("Unexpected statement {:?} in class method {}", stmt, name),
+        })
     }
 }
 
@@ -39,7 +53,7 @@ impl Callable for Class {
         _interpreter: &mut Interpreter,
         _arguments: &[Value],
     ) -> LoxResult<Value> {
-        let ret = Instance::new(self);
-        Ok(ret.into())
+        let instance = Instance::new(self);
+        Ok(instance.into())
     }
 }

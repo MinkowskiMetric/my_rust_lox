@@ -1,5 +1,8 @@
-use crate::{EnvironmentRef, FuncType, Interpreter, LoxResult, ResolvedStatement, Value};
-use std::{fmt, rc::Rc};
+use crate::{
+    Environment, EnvironmentRef, FuncType, Instance, Interpreter, LoxResult, ResolvedStatement,
+    Value,
+};
+use std::{cell::RefCell, fmt, rc::Rc};
 
 pub trait Callable: fmt::Debug + fmt::Display {
     fn func_type(&self) -> FuncType;
@@ -71,6 +74,22 @@ impl ScriptCallable {
             body: body.clone(),
             env: env.clone(),
         })
+    }
+
+    pub fn bind(self: Rc<Self>, instance: Rc<Instance>) -> Rc<Self> {
+        let mut new_environment = Environment::new(Some(self.env.clone()));
+        new_environment
+            .declare("this", instance.into())
+            .expect("Can't fail in empty environment");
+
+        let new_environment = Rc::new(RefCell::new(new_environment));
+
+        Self::new(
+            self.func_type,
+            &self.parameters,
+            &self.body,
+            &new_environment,
+        )
     }
 }
 

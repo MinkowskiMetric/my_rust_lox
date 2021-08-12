@@ -18,7 +18,7 @@ pub use callable::{Callable, NativeCallable, ScriptCallable};
 pub use class::Class;
 pub use error::{LoxError, LoxResult, UnwindableLoxError, UnwindableLoxResult};
 pub use instance::{Instance, InstanceRef};
-pub use interpreter::{interpret, EnvironmentRef, Interpreter};
+pub use interpreter::{interpret, Environment, EnvironmentRef, Interpreter};
 pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};
 pub use parser::{
     parse, BaseExpression, BinaryOp, Expression, ExpressionVisitor, FuncType, LogicalBinaryOp,

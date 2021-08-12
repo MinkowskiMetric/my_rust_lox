@@ -78,6 +78,7 @@ pub enum BaseExpression<Identifier: fmt::Display + fmt::Debug + Clone> {
     Call(Position, Box<Self>, Vec<Self>),
     Get(Position, Box<Self>, String),
     Set(Position, Box<Self>, String, Box<Self>),
+    This(Position, Identifier),
 }
 
 impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
@@ -92,7 +93,8 @@ impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
             | Self::Assignment(pos, ..)
             | Self::Call(pos, ..)
             | Self::Get(pos, ..)
-            | Self::Set(pos, ..) => pos,
+            | Self::Set(pos, ..)
+            | Self::This(pos, ..) => pos,
         }
     }
 }
@@ -163,6 +165,9 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
             BaseExpression::<Identifier>::Set(position, expr, name, value) => {
                 self.accept_set(position, expr, name, value)
             }
+            BaseExpression::<Identifier>::This(position, identifier) => {
+                self.accept_this(position, identifier)
+            }
         }
     }
 
@@ -220,6 +225,7 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
         name: &String,
         value: &BaseExpression<Identifier>,
     ) -> Self::Return;
+    fn accept_this(&mut self, position: &Position, identifier: &Identifier) -> Self::Return;
 }
 
 struct ExpressionPrinter<'a, 'b> {
@@ -328,6 +334,10 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Id
         value: &BaseExpression<Identifier>,
     ) -> Self::Return {
         write!(self.f, "{}.{} = {}", expr, name, value)
+    }
+
+    fn accept_this(&mut self, _position: &Position, _identifier: &Identifier) -> Self::Return {
+        write!(self.f, "this")
     }
 }
 
