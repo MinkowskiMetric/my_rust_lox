@@ -1,10 +1,11 @@
 use crate::{BaseExpression, Position, ResolvedIdentifier};
 use std::{collections::HashMap, fmt};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FuncType {
     Function,
     Method,
+    Initializer,
 }
 
 impl fmt::Display for FuncType {
@@ -12,6 +13,16 @@ impl fmt::Display for FuncType {
         match self {
             Self::Function => write!(f, "function"),
             Self::Method => write!(f, "method"),
+            Self::Initializer => write!(f, "initializer"),
+        }
+    }
+}
+
+impl FuncType {
+    pub fn allows_this(&self) -> bool {
+        match self {
+            Self::Function => false,
+            Self::Method | Self::Initializer => true,
         }
     }
 }
@@ -31,7 +42,7 @@ pub enum BaseStatement<Identifier: fmt::Display + fmt::Debug + Clone> {
         Option<Box<Self>>,
     ),
     While(Position, BaseExpression<Identifier>, Box<Self>),
-    Return(Position, BaseExpression<Identifier>),
+    Return(Position, Option<BaseExpression<Identifier>>),
 }
 
 impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseStatement<Identifier> {
@@ -87,7 +98,7 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
                 self.accept_while(position, expression, body)
             }
             BaseStatement::<Identifier>::Return(position, expression) => {
-                self.accept_return(position, expression)
+                self.accept_return(position, expression.as_ref())
             }
         }
     }
@@ -143,7 +154,7 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
     fn accept_return(
         &mut self,
         position: &Position,
-        expr: &BaseExpression<Identifier>,
+        expr: Option<&BaseExpression<Identifier>>,
     ) -> Self::Return;
 }
 
@@ -197,7 +208,7 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
     ) -> Self::Return {
         match func_type {
             FuncType::Function => write!(self.f, "fun {} (", name)?,
-            FuncType::Method => write!(self.f, "{} (", name)?,
+            FuncType::Method | FuncType::Initializer => write!(self.f, "{} (", name)?,
         };
 
         for parameter in parameters {
@@ -261,9 +272,12 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
     fn accept_return(
         &mut self,
         _position: &Position,
-        expr: &BaseExpression<Identifier>,
+        expr: Option<&BaseExpression<Identifier>>,
     ) -> Self::Return {
-        writeln!(self.f, "return {};", expr)
+        match expr {
+            Some(expr) => writeln!(self.f, "return {};", expr),
+            None => writeln!(self.f, "return;"),
+        }
     }
 }
 

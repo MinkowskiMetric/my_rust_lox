@@ -201,7 +201,11 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
     }
 
     fn method_decaration(&mut self, name: String) -> LoxResult<Statement> {
-        self.func_declaration_impl(FuncType::Method, name)
+        if name == "init" {
+            self.func_declaration_impl(FuncType::Initializer, name)
+        } else {
+            self.func_declaration_impl(FuncType::Method, name)
+        }
     }
 
     fn class_declaration(&mut self) -> LoxResult<Statement> {
@@ -376,9 +380,9 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         let start_pos = self.current_position();
 
         let expr = if self.match_next(SimpleToken::Semicolon) {
-            Expression::Literal(start_pos.clone(), Nil.into())
+            None
         } else {
-            self.expression()?
+            Some(self.expression()?)
         };
 
         self.expect_next(SimpleToken::Semicolon)?;

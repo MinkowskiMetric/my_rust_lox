@@ -522,8 +522,15 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
         }
     }
 
-    fn accept_return(&mut self, _position: &Position, expr: &ResolvedExpression) -> Self::Return {
-        let value = self.accept_expression(expr)?;
+    fn accept_return(
+        &mut self,
+        _position: &Position,
+        expr: Option<&ResolvedExpression>,
+    ) -> Self::Return {
+        let value = match expr {
+            Some(expr) => self.accept_expression(expr)?,
+            None => Value::from(Nil),
+        };
 
         Err(UnwindableLoxError::Return(value))
     }

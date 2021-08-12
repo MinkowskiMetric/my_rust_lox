@@ -5,22 +5,16 @@ use crate::{
 };
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug)]
-enum ClassType {
-    Class,
-    None,
-}
-
 struct Resolver {
     scopes: Vec<HashMap<String, (Position, bool)>>,
-    class_type: ClassType,
+    func_type: Option<FuncType>,
 }
 
 impl Resolver {
     fn new() -> Self {
         Self {
             scopes: Vec::new(),
-            class_type: ClassType::None,
+            func_type: None,
         }
     }
 }
@@ -75,9 +69,10 @@ impl Resolver {
     }
 
     fn resolve_this(&mut self, pos: &Position) -> LoxResult<ResolvedIdentifier> {
-        match self.class_type {
-            ClassType::Class => Ok(self.resolve_local("this")),
-            ClassType::None => Err(LoxError::ThisOutsideMethod(pos.clone())),
+        if self.func_type.map(|t| t.allows_this()).unwrap_or(false) {
+            Ok(self.resolve_local("this"))
+        } else {
+            Err(LoxError::ThisOutsideMethod(pos.clone()))
         }
     }
 }
@@ -290,12 +285,16 @@ impl StatementVisitor<String> for Resolver {
 
         self.begin_scope();
 
+        let old_function_type = self.func_type.replace(func_type);
+
         for param in parameters {
             self.declare(position, param)?;
             self.define(param);
         }
 
         let body = self.accept_statement(body)?;
+
+        self.func_type = old_function_type;
 
         self.end_scope();
 
@@ -321,9 +320,6 @@ impl StatementVisitor<String> for Resolver {
         self.declare(position, "this")?;
         self.define("this");
 
-        let original_class_type = self.class_type;
-        self.class_type = ClassType::Class;
-
         let ret = (|| {
             let methods = methods
                 .iter()
@@ -342,7 +338,6 @@ impl StatementVisitor<String> for Resolver {
             ))
         })();
 
-        self.class_type = original_class_type;
         ret
     }
 
@@ -395,10 +390,14 @@ impl StatementVisitor<String> for Resolver {
         ))
     }
 
-    fn accept_return(&mut self, position: &Position, expr: &Expression) -> Self::Return {
-        let expr = self.accept_expression(expr)?;
+    fn accept_return(&mut self, position: &Position, expr: Option<&Expression>) -> Self::Return {
+        let expr = expr.map(|expr| self.accept_expression(expr)).transpose()?;
 
-        Ok(ResolvedStatement::Return(position.clone(), expr))
+        if self.func_type == Some(FuncType::Initializer) && expr.is_some() {
+            Err(LoxError::ReturnFromInitializer(position.clone()))
+        } else {
+            Ok(ResolvedStatement::Return(position.clone(), expr))
+        }
     }
 }
 

@@ -18,6 +18,7 @@ pub enum LoxError {
     UseVariableInInitializer(Position, String),
     DuplicateVariable(String, Position, Position),
     ThisOutsideMethod(Position),
+    ReturnFromInitializer(Position),
 }
 
 impl From<io::Error> for LoxError {
@@ -63,6 +64,7 @@ impl fmt::Display for LoxError {
                 name, new_pos, original_pos
             ),
             Self::ThisOutsideMethod(pos) => write!(f, "this used outside method at {}", pos),
+            Self::ReturnFromInitializer(pos) => write!(f, "Return from initializer at {}", pos),
 
             Self::TokenizationError(errs) => {
                 for err in errs {

@@ -144,3 +144,9 @@ class WithInit {
 }
 
 print "Should be poo: " + WithInit().a;
+
+class NoBuild {
+    init() {
+        return;
+    }
+}
