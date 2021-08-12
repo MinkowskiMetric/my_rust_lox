@@ -136,3 +136,11 @@ class Cake {
 var cake = Cake();
 cake.flavor = "German chocolate";
 cake.taste(); // Prints "The German chocolate cake is delicious!".
+
+class WithInit {
+    init() {
+        this.a = "poo";
+    }
+}
+
+print "Should be poo: " + WithInit().a;

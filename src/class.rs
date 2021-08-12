@@ -2,7 +2,7 @@ use crate::{
     Callable, EnvironmentRef, FuncType, Instance, Interpreter, LoxResult, ResolvedStatement,
     ScriptCallable, Value,
 };
-use std::{collections::HashMap, fmt, rc::Rc};
+use std::{collections::HashMap, convert::TryInto, fmt, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub struct Class {
@@ -50,10 +50,19 @@ impl Callable for Class {
 
     fn call(
         self: Rc<Self>,
-        _interpreter: &mut Interpreter,
-        _arguments: &[Value],
+        interpreter: &mut Interpreter,
+        arguments: &[Value],
     ) -> LoxResult<Value> {
         let instance = Instance::new(self);
+        match instance.clone().get("init") {
+            Ok(initializer) => {
+                let initializer: Rc<dyn Callable> = initializer.try_into()?;
+                initializer.call(interpreter, arguments)?;
+            }
+
+            Err(_) => (),
+        };
+
         Ok(instance.into())
     }
 }
