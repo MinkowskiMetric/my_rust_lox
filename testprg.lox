@@ -144,9 +144,21 @@ class NoBuild {
     }
 }
 
-var fib_count = 36;
+var fib_count = 10;
 var before = clock();
 fib(fib_count);
 var after = clock();
 
 print "Fib " + fib_count + " took " + (after - before) + " seconds";
+
+class Doughnut {
+  cook() {
+    print "Fry until golden brown.";
+  }
+}
+
+class BostonCream < Doughnut {
+  // Boston Cream-specific stuff...
+}
+
+BostonCream().cook();

@@ -1,6 +1,6 @@
 use crate::{
-    Environment, EnvironmentRef, FuncType, Instance, Interpreter, LoxResult, ResolvedStatement,
-    Value,
+    Class, Environment, EnvironmentRef, FuncType, Instance, Interpreter, LoxResult,
+    ResolvedStatement, Value,
 };
 use std::{cell::RefCell, fmt, rc::Rc};
 
@@ -10,6 +10,8 @@ pub trait Callable: fmt::Debug + fmt::Display {
 
     fn call(self: Rc<Self>, interpreter: &mut Interpreter, arguments: &[Value])
         -> LoxResult<Value>;
+
+    fn try_into_class(self: Rc<Self>) -> Option<Rc<Class>>;
 }
 
 #[derive(Clone)]
@@ -38,6 +40,10 @@ impl<F: Fn(&mut Interpreter, &[Value]) -> LoxResult<Value>> Callable for NativeC
         arguments: &[Value],
     ) -> LoxResult<Value> {
         (self.f)(interpreter, arguments)
+    }
+
+    fn try_into_class(self: Rc<Self>) -> Option<Rc<Class>> {
+        None
     }
 }
 
@@ -124,6 +130,10 @@ impl Callable for ScriptCallable {
         } else {
             ret
         })
+    }
+
+    fn try_into_class(self: Rc<Self>) -> Option<Rc<Class>> {
+        None
     }
 }
 

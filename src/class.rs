@@ -7,6 +7,7 @@ use std::{collections::HashMap, convert::TryInto, fmt, rc::Rc};
 #[derive(Clone, Debug)]
 pub struct Class {
     name: String,
+    superclass: Option<Rc<Self>>,
     methods: HashMap<String, ResolvedStatement>,
     env: EnvironmentRef,
 }
@@ -14,23 +15,32 @@ pub struct Class {
 impl Class {
     pub fn new(
         name: &str,
+        superclass: Option<Rc<Self>>,
         methods: HashMap<String, ResolvedStatement>,
         env: &EnvironmentRef,
     ) -> Rc<Self> {
         Rc::new(Self {
             name: name.to_string(),
+            superclass,
             methods,
             env: env.clone(),
         })
     }
 
     pub fn lookup_method(&self, name: &str) -> Option<Rc<ScriptCallable>> {
-        self.methods.get(name).map(|stmt| match stmt {
-            ResolvedStatement::FuncDeclaration(_, func_type, _, parameters, body) => {
-                ScriptCallable::new(*func_type, parameters, body, &self.env)
-            }
-            stmt => panic!("Unexpected statement {:?} in class method {}", stmt, name),
-        })
+        self.methods
+            .get(name)
+            .map(|stmt| match stmt {
+                ResolvedStatement::FuncDeclaration(_, func_type, _, parameters, body) => {
+                    ScriptCallable::new(*func_type, parameters, body, &self.env)
+                }
+                stmt => panic!("Unexpected statement {:?} in class method {}", stmt, name),
+            })
+            .or_else(|| {
+                self.superclass
+                    .as_ref()
+                    .and_then(|superclass| superclass.lookup_method(name))
+            })
     }
 }
 
@@ -64,5 +74,9 @@ impl Callable for Class {
         };
 
         Ok(instance.into())
+    }
+
+    fn try_into_class(self: Rc<Self>) -> Option<Rc<Class>> {
+        Some(self)
     }
 }

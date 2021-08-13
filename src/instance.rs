@@ -21,13 +21,7 @@ impl Instance {
         let member = self.properties.borrow().get(name).cloned();
 
         let member = member.or_else(|| match self.class.lookup_method(name) {
-            Some(method) => {
-                let method = Value::from(method.bind(self.clone()));
-                self.properties
-                    .borrow_mut()
-                    .insert(name.to_string(), method.clone());
-                Some(method)
-            }
+            Some(method) => Some(Value::from(method.bind(self.clone()))),
             None => None,
         });
 

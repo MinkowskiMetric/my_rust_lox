@@ -75,6 +75,46 @@ impl Resolver {
             Err(LoxError::ThisOutsideMethod(pos.clone()))
         }
     }
+
+    fn resolve_super(&mut self, pos: &Position) -> LoxResult<ResolvedIdentifier> {
+        if self.func_type.map(|t| t.allows_this()).unwrap_or(false) {
+            Ok(self.resolve_local("super"))
+        } else {
+            Err(LoxError::SuperOutsideMethod(pos.clone()))
+        }
+    }
+
+    fn resolve_function(
+        &mut self,
+        position: &Position,
+        func_type: FuncType,
+        name: &str,
+        parameters: &[String],
+        body: &Statement,
+    ) -> LoxResult<ResolvedStatement> {
+        self.begin_scope();
+
+        let old_function_type = self.func_type.replace(func_type);
+
+        for param in parameters {
+            self.declare(position, param)?;
+            self.define(param);
+        }
+
+        let body = self.accept_statement(body)?;
+
+        self.func_type = old_function_type;
+
+        self.end_scope();
+
+        Ok(ResolvedStatement::FuncDeclaration(
+            position.clone(),
+            func_type,
+            name.to_string(),
+            parameters.to_vec(),
+            Box::new(body),
+        ))
+    }
 }
 
 impl ExpressionVisitor<String> for Resolver {
@@ -228,9 +268,29 @@ impl ExpressionVisitor<String> for Resolver {
         ))
     }
 
-    fn accept_this(&mut self, position: &Position, _identifier: &String) -> Self::Return {
+    fn accept_this(&mut self, position: &Position, this_identifier: &String) -> Self::Return {
+        assert_eq!(this_identifier, "this");
+
         let this = self.resolve_this(position)?;
         Ok(ResolvedExpression::This(position.clone(), this))
+    }
+
+    fn accept_super(
+        &mut self,
+        position: &Position,
+        this_identifier: &String,
+        super_identifier: &String,
+        name: &String,
+    ) -> Self::Return {
+        assert_eq!(this_identifier, "this");
+        assert_eq!(super_identifier, "super");
+
+        Ok(ResolvedExpression::Super(
+            position.clone(),
+            self.resolve_this(position)?,
+            self.resolve_super(position)?,
+            name.to_string(),
+        ))
     }
 }
 
@@ -283,38 +343,27 @@ impl StatementVisitor<String> for Resolver {
         self.declare(position, name)?;
         self.define(name);
 
-        self.begin_scope();
-
-        let old_function_type = self.func_type.replace(func_type);
-
-        for param in parameters {
-            self.declare(position, param)?;
-            self.define(param);
-        }
-
-        let body = self.accept_statement(body)?;
-
-        self.func_type = old_function_type;
-
-        self.end_scope();
-
-        Ok(ResolvedStatement::FuncDeclaration(
-            position.clone(),
-            func_type,
-            name.to_string(),
-            parameters.to_vec(),
-            Box::new(body),
-        ))
+        self.resolve_function(position, func_type, name, parameters, body)
     }
 
     fn accept_class_declaration(
         &mut self,
         position: &Position,
         name: &str,
+        superclass_name: Option<&String>,
         methods: &HashMap<String, Statement>,
     ) -> Self::Return {
         self.declare(position, name)?;
         self.define(name);
+
+        let superclass_name =
+            superclass_name.map(|superclass_name| self.resolve_local(superclass_name));
+
+        if superclass_name.is_some() {
+            self.begin_scope();
+            self.declare(position, "super")?;
+            self.define("super");
+        }
 
         self.begin_scope();
         self.declare(position, "this")?;
@@ -323,17 +372,25 @@ impl StatementVisitor<String> for Resolver {
         let ret = (|| {
             let methods = methods
                 .iter()
-                .map(|(name, method)| {
-                    let method = self.accept_statement(method)?;
-                    Ok((name.clone(), method))
+                .map(|(name, method)| match method {
+                    Statement::FuncDeclaration(position, func_type, _, parameters, body) => Ok((
+                        name.clone(),
+                        self.resolve_function(position, *func_type, name, parameters, body)?,
+                    )),
+                    stmt => panic!("Unexpected statement {} in class declaration", stmt),
                 })
                 .collect::<LoxResult<HashMap<_, _>>>()?;
 
             self.end_scope();
 
+            if superclass_name.is_some() {
+                self.end_scope();
+            }
+
             Ok(ResolvedStatement::ClassDeclaration(
                 position.clone(),
                 name.to_string(),
+                superclass_name,
                 methods,
             ))
         })();

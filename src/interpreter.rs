@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, Callable, Class, ExpressionVisitor, FuncType, InstanceRef, LogicalBinaryOp, LoxError,
-    LoxResult, NativeCallable, Nil, Position, ResolvedExpression, ResolvedIdentifier,
+    BinaryOp, Callable, Class, ExpressionVisitor, FuncType, Instance, InstanceRef, LogicalBinaryOp,
+    LoxError, LoxResult, NativeCallable, Nil, Position, ResolvedExpression, ResolvedIdentifier,
     ResolvedStatement, ScriptCallable, StatementVisitor, UnaryOp, UnwindableLoxError,
     UnwindableLoxResult, Value,
 };
@@ -426,8 +426,28 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
         Ok(value)
     }
 
-    fn accept_this(&mut self, _position: &Position, name: &ResolvedIdentifier) -> Self::Return {
-        self.get_variable(name)
+    fn accept_this(
+        &mut self,
+        _position: &Position,
+        this_identifier: &ResolvedIdentifier,
+    ) -> Self::Return {
+        self.get_variable(this_identifier)
+    }
+
+    fn accept_super(
+        &mut self,
+        _position: &Position,
+        this_identifier: &ResolvedIdentifier,
+        super_identifier: &ResolvedIdentifier,
+        name: &String,
+    ) -> Self::Return {
+        let this: Rc<Instance> = self.get_variable(this_identifier)?.try_into()?;
+        let super_class: Rc<Class> = self.get_variable(super_identifier)?.try_into()?;
+
+        super_class
+            .lookup_method(name)
+            .map(|method| Value::from(method.bind(this)))
+            .ok_or_else(|| LoxError::UnknownVariable(name.to_string()))
     }
 }
 
@@ -481,10 +501,27 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
         &mut self,
         _position: &Position,
         name: &str,
+        superclass_name: Option<&ResolvedIdentifier>,
         methods: &HashMap<String, ResolvedStatement>,
     ) -> Self::Return {
-        let value = Class::new(name, methods.clone(), self.get_env_ref()).into();
-        self.declare_variable(name, value)?;
+        let class = match superclass_name {
+            Some(superclass_name) => {
+                let superclass = Rc::<Class>::try_from(self.get_variable(superclass_name)?)?;
+
+                self.push_nested_environment();
+                self.declare_variable("super", superclass.clone().into())?;
+
+                let class = Class::new(name, Some(superclass), methods.clone(), self.get_env_ref());
+
+                self.pop_environment();
+
+                class
+            }
+
+            None => Class::new(name, None, methods.clone(), self.get_env_ref()),
+        };
+
+        self.declare_variable(name, class.into())?;
         Ok(())
     }
 

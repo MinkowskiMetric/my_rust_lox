@@ -79,6 +79,7 @@ pub enum BaseExpression<Identifier: fmt::Display + fmt::Debug + Clone> {
     Get(Position, Box<Self>, String),
     Set(Position, Box<Self>, String, Box<Self>),
     This(Position, Identifier),
+    Super(Position, Identifier, Identifier, String),
 }
 
 impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
@@ -94,7 +95,8 @@ impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
             | Self::Call(pos, ..)
             | Self::Get(pos, ..)
             | Self::Set(pos, ..)
-            | Self::This(pos, ..) => pos,
+            | Self::This(pos, ..)
+            | Self::Super(pos, ..) => pos,
         }
     }
 }
@@ -165,9 +167,15 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
             BaseExpression::<Identifier>::Set(position, expr, name, value) => {
                 self.accept_set(position, expr, name, value)
             }
-            BaseExpression::<Identifier>::This(position, identifier) => {
-                self.accept_this(position, identifier)
+            BaseExpression::<Identifier>::This(position, this_identifier) => {
+                self.accept_this(position, this_identifier)
             }
+            BaseExpression::<Identifier>::Super(
+                position,
+                this_identifier,
+                super_identifier,
+                name,
+            ) => self.accept_super(position, this_identifier, super_identifier, name),
         }
     }
 
@@ -225,7 +233,14 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
         name: &String,
         value: &BaseExpression<Identifier>,
     ) -> Self::Return;
-    fn accept_this(&mut self, position: &Position, identifier: &Identifier) -> Self::Return;
+    fn accept_this(&mut self, position: &Position, this_identifier: &Identifier) -> Self::Return;
+    fn accept_super(
+        &mut self,
+        position: &Position,
+        this_identifier: &Identifier,
+        super_identifier: &Identifier,
+        name: &String,
+    ) -> Self::Return;
 }
 
 struct ExpressionPrinter<'a, 'b> {
@@ -336,8 +351,18 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Id
         write!(self.f, "{}.{} = {}", expr, name, value)
     }
 
-    fn accept_this(&mut self, _position: &Position, _identifier: &Identifier) -> Self::Return {
+    fn accept_this(&mut self, _position: &Position, _this_identifier: &Identifier) -> Self::Return {
         write!(self.f, "this")
+    }
+
+    fn accept_super(
+        &mut self,
+        _position: &Position,
+        _this_identifier: &Identifier,
+        _super_identifier: &Identifier,
+        name: &String,
+    ) -> Self::Return {
+        write!(self.f, "super.{}", name)
     }
 }
 

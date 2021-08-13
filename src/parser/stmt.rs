@@ -33,7 +33,7 @@ pub enum BaseStatement<Identifier: fmt::Display + fmt::Debug + Clone> {
     Print(Position, BaseExpression<Identifier>),
     VarDeclaration(Position, String, BaseExpression<Identifier>),
     FuncDeclaration(Position, FuncType, String, Vec<String>, Box<Self>),
-    ClassDeclaration(Position, String, HashMap<String, Self>),
+    ClassDeclaration(Position, String, Option<Identifier>, HashMap<String, Self>),
     Block(Position, Vec<Self>),
     If(
         Position,
@@ -85,9 +85,12 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
                 parameters,
                 body,
             ) => self.accept_func_declaration(position, *func_type, name, parameters, body),
-            BaseStatement::<Identifier>::ClassDeclaration(position, name, methods) => {
-                self.accept_class_declaration(position, name, methods)
-            }
+            BaseStatement::<Identifier>::ClassDeclaration(
+                position,
+                name,
+                superclass_name,
+                methods,
+            ) => self.accept_class_declaration(position, name, superclass_name.as_ref(), methods),
             BaseStatement::<Identifier>::Block(position, statements) => {
                 self.accept_block(position, statements)
             }
@@ -131,6 +134,7 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
         &mut self,
         position: &Position,
         name: &str,
+        superclass_name: Option<&Identifier>,
         methods: &HashMap<String, BaseStatement<Identifier>>,
     ) -> Self::Return;
     fn accept_block(
@@ -221,8 +225,14 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
         &mut self,
         _position: &Position,
         name: &str,
+        superclass_name: Option<&Identifier>,
         methods: &HashMap<String, BaseStatement<Identifier>>,
     ) -> Self::Return {
+        match superclass_name {
+            Some(superclass_name) => writeln!(self.f, "class {} < {} {{", name, superclass_name),
+            None => writeln!(self.f, "class {} {{", name),
+        }?;
+
         writeln!(self.f, "class {} {{", name)?;
         for (_, method) in methods {
             write!(self.f, "{}", method)?;

@@ -1,4 +1,4 @@
-use crate::{BValue, Callable, InstanceRef, LoxError};
+use crate::{BValue, Callable, Class, InstanceRef, LoxError};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
@@ -158,6 +158,18 @@ impl TryFrom<Value> for Rc<dyn Callable> {
             Value::Callable(callable) => Ok(callable.0),
             v => Err(LoxError::ValueError(v, "callable".into())),
         }
+    }
+}
+
+impl TryFrom<Value> for Rc<Class> {
+    type Error = LoxError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v.clone() {
+            Value::Callable(callable) => callable.0.try_into_class(),
+            _ => None,
+        }
+        .ok_or_else(|| LoxError::ValueError(v, "class".into()))
     }
 }
 

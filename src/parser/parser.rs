@@ -213,19 +213,29 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         let start_pos = self.current_position();
 
         let name = self.advance_identifier()?;
+
+        let superclass_name = if self.consume_next(SimpleToken::Less) {
+            Some(self.advance_identifier()?)
+        } else {
+            None
+        };
+
         self.expect_next(SimpleToken::LeftBrace)?;
 
         let mut methods = HashMap::new();
 
-        while !self.match_next(SimpleToken::RightBrace) {
+        while !self.consume_next(SimpleToken::RightBrace) {
             let name = self.advance_identifier()?;
 
             methods.insert(name.to_string(), self.method_decaration(name)?);
         }
 
-        self.expect_next(SimpleToken::RightBrace)?;
-
-        Ok(Statement::ClassDeclaration(start_pos, name, methods))
+        Ok(Statement::ClassDeclaration(
+            start_pos,
+            name,
+            superclass_name,
+            methods,
+        ))
     }
 
     fn statement(&mut self) -> LoxResult<Statement> {
@@ -574,6 +584,16 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
                 self.current_position(),
                 "this".to_string(),
             )),
+            Some(Token::Simple(SimpleToken::Super)) => {
+                self.expect_next(SimpleToken::Dot)?;
+
+                Ok(Expression::Super(
+                    self.current_position(),
+                    "this".to_string(),
+                    "super".to_string(),
+                    self.advance_identifier()?,
+                ))
+            }
             Some(Token::Simple(SimpleToken::EndOfFile)) => {
                 Err(LoxError::IncompleteExpression(self.current_position()))
             }
