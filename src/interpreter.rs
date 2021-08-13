@@ -25,6 +25,15 @@ fn add_two_numbers(_interpreter: &mut Interpreter, arguments: &[Value]) -> LoxRe
     ))
 }
 
+fn native_clock(_interpreter: &mut Interpreter, _arguments: &[Value]) -> LoxResult<Value> {
+    use std::time::SystemTime;
+
+    match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(n) => Ok(Value::from(n.as_secs_f64())),
+        Err(_) => panic!("Time before unix epoch"),
+    }
+}
+
 impl Environment {
     pub fn new(enclosing: Option<EnvironmentRef>) -> Self {
         Self {
@@ -126,6 +135,8 @@ impl Interpreter {
             "add_two_numbers",
             NativeCallable::new(add_two_numbers, 2).into(),
         )?;
+
+        self.declare_global("clock", NativeCallable::new(native_clock, 0).into())?;
 
         Ok(())
     }
