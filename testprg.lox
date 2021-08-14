@@ -1,0 +1,164 @@
+1+2;
+
+print "hello " + (9/2);
+
+var outer = "outer";
+var inner = "outer";
+
+print "before outer: " + outer;
+print "before inner: " + inner;
+
+if (outer == inner) print "match"; else print "no-match";
+
+{
+    outer = "inner";
+    var inner = "inner";
+
+    print "inner outer: " + outer;
+    print "inner inner: " + inner;
+
+    if (outer == inner) print "match"; else print "no-match";
+}
+
+print "outer outer: " + outer;
+print "outer inner: " + inner;
+
+if (outer == inner and false) print "match"; else print "no-match";
+if (outer == inner) print "DOESN'T PRINT"; 
+
+print "Should be 'hello': " + (true and "hello");
+print "Should be false: " + (false and "hello");
+print "Should be true: " + (true or "hello");
+print "Should be 'hello': " + (false or "hello");
+
+var a = 0;
+while (a < 10) {
+    print "while loop a = " + a;
+    a = a + 1;
+}
+
+for (var b = 0; b < 15; b = b + 1) {
+    print "for loop b = " + b;
+}
+
+print "now it's finished";
+
+fun main(answer) {
+   return "the answer is " + answer;
+}
+
+print main(42.0);
+
+fun fib(n) {
+  if (n < 2) return n;
+  return fib(n - 1) + fib(n - 2); 
+}
+
+for (var i = 0; i < 10; i = i + 1) {
+    print "Fib " + i + " = " + fib(i);
+}
+
+var check;
+
+{
+    fun my_check() {
+        print b;
+    }
+
+    check = my_check;
+}
+
+var b = "hello";
+check();
+
+fun makeCounter() {
+  var i = 0;
+  fun count() {
+    i = i + 1;
+    print i;
+  }
+
+  return count;
+}
+
+var counter = makeCounter();
+counter(); // "1".
+counter(); // "2".
+
+var a = "global";
+{
+  fun showA() {
+    print "SHOULD BE global: " + a;
+  }
+
+  showA();
+  var a = "block";
+  showA();
+}
+
+fun returns_function() {
+    fun function() {
+        print "returns function works";
+    }
+
+    return function;
+}
+
+returns_function()();
+
+class test_class {
+    poo() {
+        print "poo";
+        return "you called poo";
+    }
+}
+
+print test_class;
+var object = test_class();
+object.hello = "hello";
+print object.hello;
+print object.poo();
+
+class Cake {
+  taste() {
+    var adjective = "delicious";
+    print "The " + this.flavor + " cake is " + adjective + "!";
+  }
+}
+
+var cake = Cake();
+cake.flavor = "German chocolate";
+cake.taste(); // Prints "The German chocolate cake is delicious!".
+
+class WithInit {
+    init() {
+        this.a = "poo";
+    }
+}
+
+print "Should be poo: " + WithInit().a;
+
+class NoBuild {
+    init() {
+        return;
+    }
+}
+
+var fib_count = 10;
+var before = clock();
+fib(fib_count);
+var after = clock();
+
+print "Fib " + fib_count + " took " + (after - before) + " seconds";
+
+class Doughnut {
+  cook() {
+    print "Fry until golden brown.";
+  }
+}
+
+class BostonCream < Doughnut {
+  // Boston Cream-specific stuff...
+}
+
+BostonCream().cook();
