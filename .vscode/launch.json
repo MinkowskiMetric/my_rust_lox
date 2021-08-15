@@ -1,0 +1,45 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'my-rox'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=my-rox",
+                    "--package=my-rox"
+                ],
+                "filter": {
+                    "name": "my-rox",
+                    "kind": "bin"
+                }
+            },
+            "args": ["boystest.lox"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'my-rox'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=my-rox",
+                    "--package=my-rox"
+                ],
+                "filter": {
+                    "name": "my-rox",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

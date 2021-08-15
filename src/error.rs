@@ -20,6 +20,7 @@ pub enum LoxError {
     ThisOutsideMethod(Position),
     SuperOutsideMethod(Position),
     ReturnFromInitializer(Position),
+    IncorrectArgumentCount,
 }
 
 impl From<io::Error> for LoxError {
@@ -67,6 +68,7 @@ impl fmt::Display for LoxError {
             Self::ThisOutsideMethod(pos) => write!(f, "this used outside method at {}", pos),
             Self::SuperOutsideMethod(pos) => write!(f, "super used outside method at {}", pos),
             Self::ReturnFromInitializer(pos) => write!(f, "Return from initializer at {}", pos),
+            Self::IncorrectArgumentCount => write!(f, "Incorrect argument count"),
 
             Self::TokenizationError(errs) => {
                 for err in errs {
