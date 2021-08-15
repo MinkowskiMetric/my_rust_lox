@@ -384,15 +384,11 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
         let callee = self.accept_expression(callee)?;
         match Rc::<dyn Callable>::try_from(callee) {
             Ok(callee) => {
-                if callee.arity() == arguments.len() {
-                    let arguments = arguments
-                        .iter()
-                        .map(|a| self.accept_expression(a))
-                        .collect::<LoxResult<Vec<_>>>()?;
-                    callee.clone().call(self, &arguments)
-                } else {
-                    todo!("This is a runtime error. How do we do those?");
-                }
+                let arguments = arguments
+                    .iter()
+                    .map(|a| self.accept_expression(a))
+                    .collect::<LoxResult<Vec<_>>>()?;
+                callee.clone().call(self, &arguments)
             }
             Err(e) => Err(e),
         }

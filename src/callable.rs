@@ -1,12 +1,11 @@
 use crate::{
-    Class, Environment, EnvironmentRef, FuncType, Instance, Interpreter, LoxResult,
+    Class, Environment, EnvironmentRef, FuncType, Instance, Interpreter, LoxError, LoxResult,
     ResolvedStatement, Value,
 };
 use std::{cell::RefCell, fmt, rc::Rc};
 
 pub trait Callable: fmt::Debug + fmt::Display {
     fn func_type(&self) -> FuncType;
-    fn arity(&self) -> usize;
 
     fn call(self: Rc<Self>, interpreter: &mut Interpreter, arguments: &[Value])
         -> LoxResult<Value>;
@@ -31,15 +30,16 @@ impl<F: Fn(&mut Interpreter, &[Value]) -> LoxResult<Value>> Callable for NativeC
         FuncType::Function
     }
 
-    fn arity(&self) -> usize {
-        self.arity
-    }
     fn call(
         self: Rc<Self>,
         interpreter: &mut Interpreter,
         arguments: &[Value],
     ) -> LoxResult<Value> {
-        (self.f)(interpreter, arguments)
+        if arguments.len() != self.arity {
+            Err(LoxError::IncorrectArgumentCount)
+        } else {
+            (self.f)(interpreter, arguments)
+        }
     }
 
     fn try_into_class(self: Rc<Self>) -> Option<Rc<Class>> {
@@ -104,32 +104,30 @@ impl Callable for ScriptCallable {
         self.func_type
     }
 
-    fn arity(&self) -> usize {
-        self.parameters.len()
-    }
-
     fn call(
         self: Rc<Self>,
         interpreter: &mut Interpreter,
         arguments: &[Value],
     ) -> LoxResult<Value> {
-        assert_eq!(self.parameters.len(), arguments.len());
-
-        let mut frame = interpreter.create_function_frame(&self.env);
-        for i in 0..self.parameters.len() {
-            frame.declare_variable(&self.parameters[i], arguments[i].clone())?;
-        }
-
-        let ret = frame.call_function(&self.body)?;
-
-        Ok(if self.func_type() == FuncType::Initializer {
-            self.env
-                .borrow()
-                .get("this", 0)
-                .expect("Initializer must have this")
+        if self.parameters.len() != arguments.len() {
+            Err(LoxError::IncorrectArgumentCount)
         } else {
-            ret
-        })
+            let mut frame = interpreter.create_function_frame(&self.env);
+            for i in 0..self.parameters.len() {
+                frame.declare_variable(&self.parameters[i], arguments[i].clone())?;
+            }
+
+            let ret = frame.call_function(&self.body)?;
+
+            Ok(if self.func_type() == FuncType::Initializer {
+                self.env
+                    .borrow()
+                    .get("this", 0)
+                    .expect("Initializer must have this")
+            } else {
+                ret
+            })
+        }
     }
 
     fn try_into_class(self: Rc<Self>) -> Option<Rc<Class>> {

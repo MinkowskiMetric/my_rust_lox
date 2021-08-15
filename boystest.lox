@@ -1,0 +1,18 @@
+class Boy {
+    name() { return "Boy"; }
+
+    hello() { print "hello " + this.name(); }
+}
+class Charlie < Boy {
+    init(num) { this.num = num; }
+
+    name() {
+        return "Charlie(" + this.num + ")";
+    }
+}
+
+for (var i = 0; i < 10; i = i + 1) {
+    Charlie(i).hello();
+}
+
+

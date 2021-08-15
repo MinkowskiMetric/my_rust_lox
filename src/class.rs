@@ -1,8 +1,8 @@
 use crate::{
-    Callable, EnvironmentRef, FuncType, Instance, Interpreter, LoxResult, ResolvedStatement,
-    ScriptCallable, Value,
+    Callable, EnvironmentRef, FuncType, Instance, Interpreter, LoxError, LoxResult,
+    ResolvedStatement, ScriptCallable, Value,
 };
-use std::{collections::HashMap, convert::TryInto, fmt, rc::Rc};
+use std::{collections::HashMap, fmt, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub struct Class {
@@ -54,26 +54,23 @@ impl Callable for Class {
     fn func_type(&self) -> FuncType {
         FuncType::Function
     }
-    fn arity(&self) -> usize {
-        0
-    }
 
     fn call(
         self: Rc<Self>,
         interpreter: &mut Interpreter,
         arguments: &[Value],
     ) -> LoxResult<Value> {
+        let init_method = self.lookup_method("init");
         let instance = Instance::new(self);
-        match instance.clone().get("init") {
-            Ok(initializer) => {
-                let initializer: Rc<dyn Callable> = initializer.try_into()?;
-                initializer.call(interpreter, arguments)?;
-            }
 
-            Err(_) => (),
-        };
-
-        Ok(instance.into())
+        match init_method {
+            Some(init_method) => init_method
+                .bind(instance.clone())
+                .call(interpreter, arguments)
+                .map(|_| instance.into()),
+            None if arguments.len() == 0 => Ok(instance.into()),
+            None => Err(LoxError::IncorrectArgumentCount),
+        }
     }
 
     fn try_into_class(self: Rc<Self>) -> Option<Rc<Class>> {
