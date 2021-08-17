@@ -1,13 +1,14 @@
 use super::{SimpleToken, Token};
-use crate::{FilePos, LoxError, LoxResult, Position, PositionedToken};
+use crate::{CollectedErrors, FilePos, LoxError, Position, PositionedToken};
 use lazy_static::lazy_static;
 use maplit::hashmap;
+use owned_chars::OwnedCharsExt;
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
+    io::{self, Read},
     rc::Rc,
-    str::{Chars, FromStr},
+    str::FromStr,
 };
 
 lazy_static! {
@@ -31,29 +32,25 @@ lazy_static! {
     };
 }
 
-struct CharPeeper<'a> {
-    chars: Chars<'a>,
+struct CharPeeper<Iter: Iterator<Item = char>> {
+    iter: Iter,
     peek1: Option<char>,
     peek2: Option<char>,
 }
 
-impl<'a> CharPeeper<'a> {
-    fn new(code: &'a str) -> Self {
-        let mut chars = code.chars();
-        let peek1 = chars.next();
-        let peek2 = chars.next();
+impl<Iter: Iterator<Item = char>> CharPeeper<Iter> {
+    fn new<Into: IntoIterator<IntoIter = Iter>>(code: Into) -> Self {
+        let mut iter = code.into_iter();
+        let peek1 = iter.next();
+        let peek2 = iter.next();
 
-        Self {
-            chars,
-            peek1,
-            peek2,
-        }
+        Self { iter, peek1, peek2 }
     }
 
     fn next(&mut self) -> Option<char> {
         if let Some(c) = self.peek1.take() {
             self.peek1 = self.peek2;
-            self.peek2 = self.chars.next();
+            self.peek2 = self.iter.next();
             Some(c)
         } else {
             None
@@ -69,35 +66,39 @@ impl<'a> CharPeeper<'a> {
     }
 }
 
-struct TokenReader<'a> {
-    code: CharPeeper<'a>,
+pub struct TokenReader<Iter: Iterator<Item = char>> {
+    code: Option<CharPeeper<Iter>>,
     file_name: Rc<String>,
     start_pos: FilePos,
     current_pos: FilePos,
-    file_ended: bool,
+    errors: Option<Vec<LoxError>>,
 }
 
-impl<'a> TokenReader<'a> {
-    fn new(code: &'a str, file_name: Rc<String>, line: u32) -> Self {
+impl<Iter: Iterator<Item = char>> TokenReader<Iter> {
+    fn new<Into: IntoIterator<IntoIter = Iter>>(
+        code: Into,
+        file_name: Rc<String>,
+        line: u32,
+    ) -> Self {
         Self {
-            code: CharPeeper::new(code),
+            code: Some(CharPeeper::new(code)),
             file_name,
             start_pos: FilePos::new(line, 0),
             current_pos: FilePos::new(line, 0),
-            file_ended: false,
+            errors: None,
         }
     }
 
     fn peek1(&mut self) -> Option<char> {
-        self.code.peek1()
+        self.code.as_mut().and_then(CharPeeper::peek1)
     }
 
     fn peek2(&mut self) -> Option<char> {
-        self.code.peek2()
+        self.code.as_mut().and_then(CharPeeper::peek2)
     }
 
     fn advance(&mut self) -> Option<char> {
-        match self.code.next() {
+        match self.code.as_mut().and_then(CharPeeper::next) {
             None => None,
             Some(c) => {
                 self.current_pos.advance_col();
@@ -144,16 +145,23 @@ impl<'a> TokenReader<'a> {
         }
     }
 
-    fn consume_string(&mut self) -> LoxResult<PositionedToken> {
+    fn consume_string(&mut self) -> Option<PositionedToken> {
         let mut ret = String::new();
 
         loop {
             match self.advance() {
-                None => return Err(LoxError::UnexpectedEndOfFile(self.token_position())),
-                Some('"') => return self.emit_token(Token::Literal(ret.into())),
+                None => {
+                    return self.emit_error(LoxError::UnexpectedEndOfFile(self.token_position()))
+                }
+                Some('"') => {
+                    return self.emit_token(Token::Literal(ret.into()));
+                }
 
                 Some('\\') => match self.advance() {
-                    None => return Err(LoxError::UnexpectedEndOfFile(self.token_position())),
+                    None => {
+                        return self
+                            .emit_error(LoxError::UnexpectedEndOfFile(self.token_position()))
+                    }
                     Some('\\') => ret.push('\\'),
                     Some('n') => ret.push('\n'),
                     Some('t') => ret.push('\t'),
@@ -161,7 +169,8 @@ impl<'a> TokenReader<'a> {
                     Some('0') => ret.push('\0'),
                     Some('"') => ret.push('"'),
                     Some(c) => {
-                        return Err(LoxError::UnknownEscapeSequence(c, self.token_position()))
+                        return self
+                            .emit_error(LoxError::UnknownEscapeSequence(c, self.token_position()))
                     }
                 },
 
@@ -174,7 +183,7 @@ impl<'a> TokenReader<'a> {
         }
     }
 
-    fn consume_identifier(&mut self, first_char: char) -> LoxResult<PositionedToken> {
+    fn consume_identifier(&mut self, first_char: char) -> Option<PositionedToken> {
         let mut ret: String = first_char.into();
 
         loop {
@@ -189,7 +198,7 @@ impl<'a> TokenReader<'a> {
         }
     }
 
-    fn consume_number(&mut self, first_digit: char) -> LoxResult<PositionedToken> {
+    fn consume_number(&mut self, first_digit: char) -> Option<PositionedToken> {
         let mut num_str: String = first_digit.into();
 
         loop {
@@ -202,88 +211,111 @@ impl<'a> TokenReader<'a> {
                 _ => {
                     return match f64::from_str(&num_str) {
                         Ok(num) => self.emit_token(Token::Literal(num.into())),
-                        Err(e) => Err(LoxError::InvalidNumber(e, self.token_position())),
+                        Err(e) => {
+                            self.emit_error(LoxError::InvalidNumber(e, self.token_position()))
+                        }
                     };
                 }
             }
         }
     }
 
-    fn emit_identifier(&self, identifier: String) -> LoxResult<PositionedToken> {
+    fn emit_identifier(&self, identifier: String) -> Option<PositionedToken> {
         match KEYWORDS.get(&*identifier).cloned() {
-            Some(token) => self.emit_token(Token::Simple(token)),
+            Some(token) => self.emit_simple_token(token),
             None => self.emit_token(Token::Identifier(identifier)),
         }
     }
 
-    fn emit_token(&self, token: Token) -> LoxResult<PositionedToken> {
-        Ok(PositionedToken::new(token, self.token_position()))
+    fn emit_simple_token(&self, simple_token: SimpleToken) -> Option<PositionedToken> {
+        self.emit_token(Token::Simple(simple_token))
+    }
+
+    fn emit_token(&self, token: Token) -> Option<PositionedToken> {
+        Some(PositionedToken::new(token, self.token_position()))
     }
 
     fn token_position(&self) -> Position {
         Position::new(self.file_name.clone(), self.start_pos, self.current_pos)
     }
+
+    fn emit_error(&mut self, error: LoxError) -> Option<PositionedToken> {
+        self.errors.get_or_insert_with(Vec::new).push(error);
+        None
+    }
 }
 
-impl<'a> Iterator for TokenReader<'a> {
-    type Item = LoxResult<PositionedToken>;
+impl<Iter: Iterator<Item = char>> Iterator for TokenReader<Iter> {
+    type Item = PositionedToken;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.skip_whitespace();
-        self.start_pos = self.current_pos;
+        loop {
+            self.skip_whitespace();
+            self.start_pos = self.current_pos;
 
-        match self.advance() {
-            None => {
-                if !self.file_ended {
-                    self.file_ended = true;
-                    Some(self.emit_token(Token::Simple(SimpleToken::EndOfFile)))
-                } else {
-                    None
+            let token = match self.advance() {
+                None => match self.code {
+                    Some(_) => {
+                        self.code = None;
+                        self.emit_simple_token(SimpleToken::EndOfFile)
+                    }
+                    None => return None,
+                },
+
+                // Single characters are simple
+                Some('(') => self.emit_simple_token(SimpleToken::LeftParen),
+                Some(')') => self.emit_simple_token(SimpleToken::RightParen),
+                Some('{') => self.emit_simple_token(SimpleToken::LeftBrace),
+                Some('}') => self.emit_simple_token(SimpleToken::RightBrace),
+                Some(',') => self.emit_simple_token(SimpleToken::Comma),
+                Some('.') => self.emit_simple_token(SimpleToken::Dot),
+                Some('-') => self.emit_simple_token(SimpleToken::Minus),
+                Some('+') => self.emit_simple_token(SimpleToken::Plus),
+                Some(';') => self.emit_simple_token(SimpleToken::Semicolon),
+                Some('*') => self.emit_simple_token(SimpleToken::Star),
+                Some('/') => self.emit_simple_token(SimpleToken::Slash),
+                Some('?') => self.emit_simple_token(SimpleToken::QuestionMark),
+                Some(':') => self.emit_simple_token(SimpleToken::Colon),
+
+                // One or two character tokens
+                Some('!') if self.match_advance('=') => {
+                    self.emit_simple_token(SimpleToken::BangEqual)
                 }
-            }
+                Some('!') => self.emit_simple_token(SimpleToken::Bang),
+                Some('=') if self.match_advance('=') => {
+                    self.emit_simple_token(SimpleToken::EqualEqual)
+                }
+                Some('=') => self.emit_simple_token(SimpleToken::Equal),
+                Some('<') if self.match_advance('=') => {
+                    self.emit_simple_token(SimpleToken::LessEqual)
+                }
+                Some('<') => self.emit_simple_token(SimpleToken::Less),
+                Some('>') if self.match_advance('=') => {
+                    self.emit_simple_token(SimpleToken::GreaterEqual)
+                }
+                Some('>') => self.emit_simple_token(SimpleToken::Greater),
 
-            // Single characters are simple
-            Some('(') => Some(self.emit_token(Token::Simple(SimpleToken::LeftParen))),
-            Some(')') => Some(self.emit_token(Token::Simple(SimpleToken::RightParen))),
-            Some('{') => Some(self.emit_token(Token::Simple(SimpleToken::LeftBrace))),
-            Some('}') => Some(self.emit_token(Token::Simple(SimpleToken::RightBrace))),
-            Some(',') => Some(self.emit_token(Token::Simple(SimpleToken::Comma))),
-            Some('.') => Some(self.emit_token(Token::Simple(SimpleToken::Dot))),
-            Some('-') => Some(self.emit_token(Token::Simple(SimpleToken::Minus))),
-            Some('+') => Some(self.emit_token(Token::Simple(SimpleToken::Plus))),
-            Some(';') => Some(self.emit_token(Token::Simple(SimpleToken::Semicolon))),
-            Some('*') => Some(self.emit_token(Token::Simple(SimpleToken::Star))),
-            Some('/') => Some(self.emit_token(Token::Simple(SimpleToken::Slash))),
-            Some('?') => Some(self.emit_token(Token::Simple(SimpleToken::QuestionMark))),
-            Some(':') => Some(self.emit_token(Token::Simple(SimpleToken::Colon))),
+                Some('"') => self.consume_string(),
 
-            // One or two character tokens
-            Some('!') if self.match_advance('=') => {
-                Some(self.emit_token(Token::Simple(SimpleToken::BangEqual)))
-            }
-            Some('!') => Some(self.emit_token(Token::Simple(SimpleToken::Bang))),
-            Some('=') if self.match_advance('=') => {
-                Some(self.emit_token(Token::Simple(SimpleToken::EqualEqual)))
-            }
-            Some('=') => Some(self.emit_token(Token::Simple(SimpleToken::Equal))),
-            Some('<') if self.match_advance('=') => {
-                Some(self.emit_token(Token::Simple(SimpleToken::LessEqual)))
-            }
-            Some('<') => Some(self.emit_token(Token::Simple(SimpleToken::Less))),
-            Some('>') if self.match_advance('=') => {
-                Some(self.emit_token(Token::Simple(SimpleToken::GreaterEqual)))
-            }
-            Some('>') => Some(self.emit_token(Token::Simple(SimpleToken::Greater))),
+                Some(first_char @ ('_' | 'a'..='z' | 'A'..='Z')) => {
+                    self.consume_identifier(first_char)
+                }
+                Some(first_digit @ '0'..='9') => self.consume_number(first_digit),
 
-            Some('"') => Some(self.consume_string()),
+                _ => None,
+            };
 
-            Some(first_char @ ('_' | 'a'..='z' | 'A'..='Z')) => {
-                Some(self.consume_identifier(first_char))
+            match token {
+                Some(token) => break Some(token),
+                None => (),
             }
-            Some(first_digit @ '0'..='9') => Some(self.consume_number(first_digit)),
-
-            Some(c) => Some(Err(LoxError::InvalidCharacter(c, self.token_position()))),
         }
+    }
+}
+
+impl<Iter: Iterator<Item = char>> CollectedErrors for TokenReader<Iter> {
+    fn errors(self) -> Option<Vec<LoxError>> {
+        self.errors
     }
 }
 
@@ -291,35 +323,25 @@ pub fn tokenize<'a, 'b>(
     code: &'a str,
     file_name: &'b str,
     line: u32,
-) -> LoxResult<Vec<PositionedToken>> {
-    let mut tokens = Vec::new();
-    let mut errors = Vec::new();
-    for result in TokenReader::new(code, Rc::new(file_name.into()), line) {
-        match result {
-            Ok(token) => tokens.push(token),
-            Err(err) => errors.push(err),
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(tokens)
-    } else {
-        Err(LoxError::TokenizationError(errors))
-    }
+) -> impl CollectedErrors<Item = PositionedToken> + 'a {
+    TokenReader::new(code.chars(), Rc::new(file_name.into()), line)
 }
 
-pub fn tokenize_file(path: &str) -> LoxResult<Vec<PositionedToken>> {
+pub fn tokenize_file(
+    path: &str,
+) -> Result<impl CollectedErrors<Item = PositionedToken>, io::Error> {
     let mut file = fs::File::open(path)?;
 
     let mut code = String::new();
     file.read_to_string(&mut code)?;
 
-    tokenize(&code, path, 1)
+    Ok(TokenReader::new(code.into_chars(), Rc::new(path.into()), 1))
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::CompilerResult;
 
     fn assert_token_match(
         result: &PositionedToken,
@@ -386,7 +408,9 @@ mod test {
     }
 
     fn assert_tokens(tokens: &str, expected: &[SimpleTokenMatch]) {
-        let tokens = tokenize(tokens, "filename", 0).expect("Failed to match tokens");
+        let tokens: Vec<_> = tokenize(tokens, "filename", 0)
+            .result()
+            .expect("Failed to match tokens");
 
         assert_eq!(tokens.len(), expected.len() + 1);
         for idx in 0..expected.len() {
@@ -406,7 +430,7 @@ mod test {
     }
 
     fn assert_errors(tokens: &str, expected: &[SimpleErrorMatch]) {
-        if let Err(LoxError::TokenizationError(errors)) = tokenize(tokens, "filename", 0) {
+        if let CompilerResult::Failed(errors) = tokenize(tokens, "filename", 0).result::<Vec<_>>() {
             assert_eq!(errors.len(), expected.len());
             for idx in 0..errors.len() {
                 assert_error_match(
@@ -460,14 +484,18 @@ mod test {
         assert_single_token("12.34", Token::Literal(12.34.into()), 0, 5);
 
         assert_token_match(
-            &tokenize("\n\n\"one\n\ntwo\"", "boo", 0).expect("failed to parse")[0],
+            &tokenize("\n\n\"one\n\ntwo\"", "boo", 0)
+                .result::<Vec<_>>()
+                .expect("failed to parse")[0],
             &Token::Literal("one\n\ntwo".to_string().into()),
             "boo",
             FilePos::new(2, 0),
             FilePos::new(4, 4),
         );
         assert_token_match(
-            &tokenize("\n\n(", "boo", 0).expect("failed to parse")[0],
+            &tokenize("\n\n(", "boo", 0)
+                .result::<Vec<_>>()
+                .expect("failed to parse")[0],
             &Token::Simple(SimpleToken::LeftParen),
             "boo",
             FilePos::new(2, 0),
@@ -475,6 +503,7 @@ mod test {
         );
         assert_token_match(
             &tokenize("\n  // hello world\n(\n// not to end of line", "boo", 0)
+                .result::<Vec<_>>()
                 .expect("failed to parse")[0],
             &Token::Simple(SimpleToken::LeftParen),
             "boo",

@@ -1,13 +1,15 @@
 use super::Expression;
 use crate::{
-    BinaryOp, FuncType, LogicalBinaryOp, LoxError, LoxResult, Nil, Position, PositionedToken,
-    SimpleToken, Statement, Token, UnaryOp, Value,
+    BinaryOp, CollectedErrors, CollectibleErrors, FuncType, LogicalBinaryOp, LoxError, Nil,
+    Position, PositionedToken, SimpleToken, Statement, Token, UnaryOp, Value,
 };
-use std::{collections::HashMap, iter::Peekable};
+use std::collections::HashMap;
 
-pub struct Parser<Iter: Iterator<Item = PositionedToken>> {
-    tokens: Peekable<Iter>,
+pub struct Parser<Iter: CollectedErrors<Item = PositionedToken>> {
+    tokens: Iter,
+    next: Option<PositionedToken>,
     last_token_pos: Option<Position>,
+    errors: Option<Vec<LoxError>>,
 }
 
 macro_rules! binary_expression {
@@ -28,7 +30,7 @@ macro_rules! binary_expression {
     };
 
     ($prsr:ident.match_internal_binary_expression($expr:ident, $next:ident) { $(SimpleToken::$token:ident => $op_type:ident::$op:ident,)+ }) => {
-        let mut left_expr = $prsr.$next()?;
+        let mut left_expr = $prsr.$next();
 
         loop {
             match $prsr.peek_token() {
@@ -36,27 +38,50 @@ macro_rules! binary_expression {
                     // Skip past the operator since we already know what it is
                     $prsr.advance_and_discard();
 
-                    let right_expr = $prsr.$next()?;
+                    let right_expr = $prsr.$next();
 
                     left_expr = Expression::$expr($prsr.current_position(), Box::new(left_expr), $op_type::$op, Box::new(right_expr));
                 },)+
 
-                _ => break Ok(left_expr),
-            };
+                _ => break left_expr,
+            }
         }
     };
 }
 
-impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
-    fn new(iter: Iter) -> Self {
+impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
+    fn new(mut iter: Iter) -> Self {
+        let next = iter.next();
         Self {
-            tokens: iter.peekable(),
+            tokens: iter,
+            next,
             last_token_pos: None,
+            errors: None,
         }
     }
 
+    fn emit_error(&mut self, error: LoxError) {
+        self.errors.get_or_insert_with(Vec::new).push(error)
+    }
+
+    fn error_expression(&self) -> Expression {
+        assert!(
+            self.errors.as_ref().map(Vec::len).unwrap_or(0) > 0,
+            "No error has been emitted"
+        );
+        Expression::ErrorPlaceholder(self.current_position())
+    }
+
+    fn error_statement(&self) -> Statement {
+        assert!(
+            self.errors.as_ref().map(Vec::len).unwrap_or(0) > 0,
+            "No error has been emitted"
+        );
+        Statement::ErrorPlaceholder(self.current_position())
+    }
+
     fn peek(&mut self) -> Option<&PositionedToken> {
-        self.tokens.peek()
+        self.next.as_ref()
     }
 
     fn peek_token(&mut self) -> Option<&Token> {
@@ -64,7 +89,7 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
     }
 
     fn advance_token(&mut self) -> Option<Token> {
-        let next = self.tokens.next();
+        let next = std::mem::replace(&mut self.next, self.tokens.next());
 
         next.map(|t| {
             let (token, token_pos) = t.take();
@@ -77,14 +102,18 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         self.advance_token();
     }
 
-    fn advance_identifier(&mut self) -> LoxResult<String> {
-        match self.advance_token() {
-            Some(Token::Identifier(name)) => Ok(name),
-            Some(unexpected_token) => Err(LoxError::UnexpectedToken(
-                unexpected_token,
-                self.current_position(),
-            )),
-            None => panic!("End of file token missing"),
+    fn advance_identifier(&mut self) -> Option<String> {
+        match self.peek_token() {
+            Some(Token::Identifier(name)) => {
+                let name = name.to_string();
+                self.advance_and_discard();
+                Some(name)
+            }
+
+            _ => {
+                self.emit_error(LoxError::ExpectedIdentifier(self.current_position()));
+                None
+            }
         }
     }
 
@@ -101,6 +130,13 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
             .unwrap_or(false)
     }
 
+    fn match_simple(&mut self) -> Option<SimpleToken> {
+        self.peek_token().and_then(|token| match token {
+            Token::Simple(simple) => Some(*simple),
+            _ => None,
+        })
+    }
+
     fn consume_next(&mut self, expected: SimpleToken) -> bool {
         if self.match_next(expected) {
             self.advance_and_discard();
@@ -110,17 +146,38 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         }
     }
 
-    fn expect_next(&mut self, expected: SimpleToken) -> LoxResult<()> {
+    fn expect_next(&mut self, expected: SimpleToken) -> bool {
         match self.advance_token() {
-            Some(Token::Simple(token)) if token == expected => Ok(()),
-            Some(Token::Simple(SimpleToken::EndOfFile)) => {
-                Err(LoxError::IncompleteExpression(self.current_position()))
+            Some(Token::Simple(token)) if token == expected => true,
+            Some(unexpected_token) => {
+                self.emit_error(LoxError::UnexpectedToken(
+                    self.current_position(),
+                    unexpected_token,
+                ));
+                false
             }
-            Some(unexpected_token) => Err(LoxError::UnexpectedToken(
-                unexpected_token,
-                self.current_position(),
-            )),
-            None => panic!("End of file token missing"),
+            None => {
+                self.emit_error(LoxError::UnexpectedEndOfFile(self.current_position()));
+                false
+            }
+        }
+    }
+
+    fn expect_and_skip_to(&mut self, expected: SimpleToken) {
+        // For use at the end of statements. Allows us to error and skip any garbage at the end of a statement
+        if !self.expect_next(expected) {
+            self.skip_until(expected);
+        }
+    }
+
+    fn skip_until(&mut self, target: SimpleToken) {
+        loop {
+            match self.advance_token() {
+                Some(Token::Simple(SimpleToken::EndOfFile)) | None => break,
+                Some(Token::Simple(token)) if token == target => break,
+
+                Some(_) => (),
+            }
         }
     }
 
@@ -132,75 +189,80 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         );
     }
 
-    fn declaration(&mut self) -> LoxResult<Statement> {
-        if self.match_next(SimpleToken::Var) {
-            self.var_declaration()
-        } else if self.match_next(SimpleToken::Fun) {
-            self.func_declaration()
-        } else if self.match_next(SimpleToken::Class) {
-            self.class_declaration()
-        } else {
-            self.statement()
+    fn declaration(&mut self) -> Statement {
+        match self.match_simple() {
+            Some(SimpleToken::Var) => self.var_declaration(),
+            Some(SimpleToken::Fun) => self.func_declaration(),
+            Some(SimpleToken::Class) => self.class_declaration(),
+            _ => self.statement(),
         }
     }
 
-    fn var_declaration(&mut self) -> LoxResult<Statement> {
+    fn var_declaration(&mut self) -> Statement {
         self.assert_next(SimpleToken::Var);
 
-        let name = self.advance_identifier()?;
-        let name_pos = self.current_position();
+        let ret = self.advance_identifier().map(|identifier| {
+            let identifier_pos = self.current_position();
 
-        let expr = if self.consume_next(SimpleToken::Equal) {
-            self.expression()?
-        } else {
-            Expression::Literal(self.current_position(), Value::from(Nil))
-        };
+            // Error handling in here is interesting. If we fail to parse an expression, we just behave as if
+            // the equals sign wasn't there. Whatever happens we skip until the semicolon.
+            let expr = if self.consume_next(SimpleToken::Equal) {
+                self.expression()
+            } else {
+                Expression::Literal(self.current_position(), Value::from(Nil))
+            };
 
-        self.expect_next(SimpleToken::Semicolon)?;
+            Statement::VarDeclaration(identifier_pos, identifier, expr)
+        });
 
-        Ok(Statement::VarDeclaration(name_pos, name, expr))
+        self.expect_and_skip_to(SimpleToken::Semicolon);
+
+        ret.unwrap_or_else(|| self.error_statement())
     }
 
-    fn func_declaration_impl(&mut self, func_type: FuncType, name: String) -> LoxResult<Statement> {
+    fn func_declaration_impl(&mut self, func_type: FuncType, identifier: String) -> Statement {
         let start_pos = self.current_position();
 
-        self.expect_next(SimpleToken::LeftParen)?;
+        if self.expect_next(SimpleToken::LeftParen) {
+            let mut parameters = Vec::new();
 
-        let mut parameters = Vec::new();
+            if !self.consume_next(SimpleToken::RightParen) {
+                loop {
+                    parameters.push(match self.advance_identifier() {
+                        Some(name) => name,
+                        None => {
+                            // Skip the token and use a dummy name.
+                            self.advance_and_discard();
+                            "PARAMETER ERROR".into()
+                        }
+                    });
 
-        if !self.match_next(SimpleToken::RightParen) {
-            loop {
-                parameters.push(self.advance_identifier()?);
-
-                if self.match_next(SimpleToken::RightParen) {
-                    break;
+                    if !self.consume_next(SimpleToken::Comma) {
+                        self.expect_and_skip_to(SimpleToken::RightParen);
+                        break;
+                    }
                 }
-
-                self.expect_next(SimpleToken::Comma)?;
             }
+
+            let body = self.block();
+
+            Statement::FuncDeclaration(start_pos, func_type, identifier, parameters, Box::new(body))
+        } else {
+            self.skip_until(SimpleToken::RightBrace);
+            self.error_statement()
         }
-
-        self.expect_next(SimpleToken::RightParen)?;
-
-        let body = self.block()?;
-
-        Ok(Statement::FuncDeclaration(
-            start_pos,
-            func_type,
-            name,
-            parameters,
-            Box::new(body),
-        ))
     }
 
-    fn func_declaration(&mut self) -> LoxResult<Statement> {
+    fn func_declaration(&mut self) -> Statement {
         self.assert_next(SimpleToken::Fun);
 
-        let name = self.advance_identifier()?;
-        self.func_declaration_impl(FuncType::Function, name)
+        match self.advance_identifier() {
+            Some(identifier) => self.func_declaration_impl(FuncType::Function, identifier),
+            None => self.error_statement(),
+        }
     }
 
-    fn method_decaration(&mut self, name: String) -> LoxResult<Statement> {
+    fn method_decaration(&mut self, name: String) -> Statement {
         if name == "init" {
             self.func_declaration_impl(FuncType::Initializer, name)
         } else {
@@ -208,37 +270,49 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         }
     }
 
-    fn class_declaration(&mut self) -> LoxResult<Statement> {
+    fn class_declaration(&mut self) -> Statement {
         self.assert_next(SimpleToken::Class);
         let start_pos = self.current_position();
 
-        let name = self.advance_identifier()?;
+        match self.advance_identifier() {
+            Some(class_identifier) => {
+                let superclass_identifier = if self.consume_next(SimpleToken::Less) {
+                    Some(self.advance_identifier().unwrap_or("UNKNOWN CLASS".into()))
+                } else {
+                    None
+                };
 
-        let superclass_name = if self.consume_next(SimpleToken::Less) {
-            Some(self.advance_identifier()?)
-        } else {
-            None
-        };
+                if self.expect_next(SimpleToken::LeftBrace) {
+                    let mut methods = HashMap::new();
 
-        self.expect_next(SimpleToken::LeftBrace)?;
+                    while !self.match_next(SimpleToken::RightBrace) {
+                        let method_identifier =
+                            self.advance_identifier().unwrap_or("FAKE METHOD".into());
+                        methods.insert(
+                            method_identifier.clone(),
+                            self.method_decaration(method_identifier),
+                        );
+                    }
 
-        let mut methods = HashMap::new();
+                    self.expect_and_skip_to(SimpleToken::RightBrace);
 
-        while !self.consume_next(SimpleToken::RightBrace) {
-            let name = self.advance_identifier()?;
+                    Statement::ClassDeclaration(
+                        start_pos,
+                        class_identifier,
+                        superclass_identifier,
+                        methods,
+                    )
+                } else {
+                    self.skip_until(SimpleToken::RightBrace);
+                    self.error_statement()
+                }
+            }
 
-            methods.insert(name.to_string(), self.method_decaration(name)?);
+            None => self.error_statement(),
         }
-
-        Ok(Statement::ClassDeclaration(
-            start_pos,
-            name,
-            superclass_name,
-            methods,
-        ))
     }
 
-    fn statement(&mut self) -> LoxResult<Statement> {
+    fn statement(&mut self) -> Statement {
         match self.peek_token() {
             Some(Token::Simple(SimpleToken::Print)) => self.print_statement(),
             Some(Token::Simple(SimpleToken::LeftBrace)) => self.block(),
@@ -250,234 +324,219 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         }
     }
 
-    fn expression_statement(&mut self) -> LoxResult<Statement> {
-        let expr = self.expression()?;
-        self.expect_next(SimpleToken::Semicolon)?;
-
-        Ok(Statement::Expression(self.current_position(), expr))
+    fn expression_statement(&mut self) -> Statement {
+        let expr = self.expression();
+        self.expect_and_skip_to(SimpleToken::Semicolon);
+        Statement::Expression(self.current_position(), expr)
     }
 
-    fn print_statement(&mut self) -> LoxResult<Statement> {
+    fn print_statement(&mut self) -> Statement {
         self.assert_next(SimpleToken::Print);
         let print_pos = self.current_position();
 
-        let expr = self.expression()?;
-        self.expect_next(SimpleToken::Semicolon)?;
+        let expr = self.expression();
+        self.expect_and_skip_to(SimpleToken::Semicolon);
 
-        Ok(Statement::Print(print_pos, expr))
+        Statement::Print(print_pos, expr)
     }
 
-    fn if_statement(&mut self) -> LoxResult<Statement> {
+    fn if_statement(&mut self) -> Statement {
         self.assert_next(SimpleToken::If);
         let if_position = self.current_position();
 
-        self.expect_next(SimpleToken::LeftParen)?;
+        self.expect_and_skip_to(SimpleToken::LeftParen);
+        let condition = self.expression();
+        self.expect_and_skip_to(SimpleToken::RightParen);
 
-        let condition = self.expression()?;
+        let then_branch = self.statement();
 
-        self.expect_next(SimpleToken::RightParen)?;
-
-        let then_branch = self.statement()?;
-
-        if self.consume_next(SimpleToken::Else) {
-            let else_branch = self.statement()?;
-
-            Ok(Statement::If(
-                if_position,
-                condition,
-                Box::new(then_branch),
-                Some(Box::new(else_branch)),
-            ))
+        let else_branch = if self.consume_next(SimpleToken::Else) {
+            Some(self.statement())
         } else {
-            Ok(Statement::If(
-                if_position,
-                condition,
-                Box::new(then_branch),
-                None,
-            ))
-        }
+            None
+        };
+
+        Statement::If(
+            if_position,
+            condition,
+            Box::new(then_branch),
+            else_branch.map(Box::new),
+        )
     }
 
-    fn block(&mut self) -> LoxResult<Statement> {
+    fn block(&mut self) -> Statement {
         self.assert_next(SimpleToken::LeftBrace);
         let block_pos = self.current_position();
         let mut statements = Vec::new();
 
         loop {
             if self.consume_next(SimpleToken::RightBrace) {
-                break Ok(Statement::Block(block_pos, statements));
+                break Statement::Block(block_pos, statements);
             } else {
-                statements.push(self.declaration()?);
+                statements.push(self.declaration());
             }
         }
     }
 
-    fn while_statement(&mut self) -> LoxResult<Statement> {
+    fn while_statement(&mut self) -> Statement {
         self.assert_next(SimpleToken::While);
 
-        self.expect_next(SimpleToken::LeftParen)?;
+        if self.expect_next(SimpleToken::LeftParen) {
+            let condition = self.expression();
+            self.expect_and_skip_to(SimpleToken::RightParen);
 
-        let condition = self.expression()?;
-
-        self.expect_next(SimpleToken::RightParen)?;
-
-        let body = self.statement()?;
-
-        Ok(Statement::While(
-            condition.position().clone(),
-            condition,
-            Box::new(body),
-        ))
-    }
-
-    fn for_statement(&mut self) -> LoxResult<Statement> {
-        self.assert_next(SimpleToken::For);
-
-        self.expect_next(SimpleToken::LeftParen)?;
-
-        let initializer = if self.consume_next(SimpleToken::Semicolon) {
-            None
-        } else if self.match_next(SimpleToken::Var) {
-            Some(self.var_declaration()?)
-        } else {
-            Some(self.expression_statement()?)
-        };
-
-        let condition = if self.match_next(SimpleToken::Semicolon) {
-            // If no condition is specified, loop forever
-            Expression::Literal(self.current_position(), Value::from(true))
-        } else {
-            self.expression()?
-        };
-
-        self.expect_next(SimpleToken::Semicolon)?;
-
-        let increment = if self.match_next(SimpleToken::RightParen) {
-            None
-        } else {
-            Some(self.expression()?)
-        };
-
-        self.expect_next(SimpleToken::RightParen)?;
-
-        let body = self.statement()?;
-        let body = if let Some(increment) = increment {
-            Statement::Block(
-                body.position().clone(),
-                vec![
-                    body,
-                    Statement::Expression(increment.position().clone(), increment),
-                ],
+            Statement::While(
+                condition.position().clone(),
+                condition,
+                Box::new(self.statement()),
             )
         } else {
-            body
-        };
-
-        let looper = Statement::While(condition.position().clone(), condition, Box::new(body));
-
-        if let Some(initializer) = initializer {
-            Ok(Statement::Block(
-                looper.position().clone(),
-                vec![initializer, looper],
-            ))
-        } else {
-            Ok(looper)
+            self.skip_until(SimpleToken::Semicolon);
+            self.error_statement()
         }
     }
 
-    fn return_statement(&mut self) -> LoxResult<Statement> {
+    fn for_statement(&mut self) -> Statement {
+        self.assert_next(SimpleToken::For);
+
+        if self.expect_next(SimpleToken::LeftParen) {
+            let initializer = if self.consume_next(SimpleToken::Semicolon) {
+                None
+            } else if self.match_next(SimpleToken::Var) {
+                Some(self.var_declaration())
+            } else {
+                Some(self.expression_statement())
+            };
+
+            let condition = if self.match_next(SimpleToken::Semicolon) {
+                Expression::Literal(self.current_position(), Value::from(true))
+            } else {
+                self.expression()
+            };
+
+            self.expect_and_skip_to(SimpleToken::Semicolon);
+
+            let increment = if self.match_next(SimpleToken::RightParen) {
+                None
+            } else {
+                Some(self.expression())
+            };
+
+            self.expect_and_skip_to(SimpleToken::RightParen);
+
+            let body = self.statement();
+            let body = match increment {
+                Some(increment) => Statement::Block(
+                    body.position().clone(),
+                    vec![
+                        body,
+                        Statement::Expression(increment.position().clone(), increment),
+                    ],
+                ),
+                None => body,
+            };
+
+            let looper = Statement::While(condition.position().clone(), condition, Box::new(body));
+
+            match initializer {
+                Some(initializer) => {
+                    Statement::Block(looper.position().clone(), vec![initializer, looper])
+                }
+                None => looper,
+            }
+        } else {
+            self.skip_until(SimpleToken::RightBrace);
+            self.error_statement()
+        }
+    }
+
+    fn return_statement(&mut self) -> Statement {
         self.assert_next(SimpleToken::Return);
         let start_pos = self.current_position();
 
         let expr = if self.match_next(SimpleToken::Semicolon) {
             None
         } else {
-            Some(self.expression()?)
+            Some(self.expression())
         };
 
-        self.expect_next(SimpleToken::Semicolon)?;
+        self.expect_and_skip_to(SimpleToken::Semicolon);
 
-        Ok(Statement::Return(start_pos, expr))
+        Statement::Return(start_pos, expr)
     }
 
-    fn expression(&mut self) -> LoxResult<Expression> {
+    fn expression(&mut self) -> Expression {
         self.comma_sequence()
     }
 
-    fn comma_sequence(&mut self) -> LoxResult<Expression> {
+    fn comma_sequence(&mut self) -> Expression {
         binary_expression! { self.match_binary_expression(assignment) {
             SimpleToken::Comma => BinaryOp::Comma,
         } }
     }
 
-    fn assignment(&mut self) -> LoxResult<Expression> {
-        match self.logic_or()? {
-            Expression::VariableGet(_, name) if self.consume_next(SimpleToken::Equal) => {
-                let value = self.assignment()?;
-
-                Ok(Expression::Assignment(
+    fn assignment(&mut self) -> Expression {
+        match self.logic_or() {
+            Expression::VariableGet(_, identifier) if self.consume_next(SimpleToken::Equal) => {
+                Expression::Assignment(
                     self.current_position(),
-                    name.to_string(),
-                    Box::new(value),
-                ))
+                    identifier.to_string(),
+                    Box::new(self.assignment()),
+                )
             }
 
-            Expression::Get(_, expr, name) if self.consume_next(SimpleToken::Equal) => {
-                let value = self.assignment()?;
-
-                Ok(Expression::Set(
+            Expression::Get(_, expr, identifier) if self.consume_next(SimpleToken::Equal) => {
+                Expression::Set(
                     self.current_position(),
                     expr,
-                    name.to_string(),
-                    Box::new(value),
-                ))
+                    identifier.to_string(),
+                    Box::new(self.assignment()),
+                )
             }
 
-            other => Ok(other),
+            expr => expr,
         }
     }
 
-    fn logic_or(&mut self) -> LoxResult<Expression> {
+    fn logic_or(&mut self) -> Expression {
         binary_expression! { self.match_logical_binary_expression(logic_and) {
             SimpleToken::Or => LogicalBinaryOp::Or,
         } }
     }
 
-    fn logic_and(&mut self) -> LoxResult<Expression> {
+    fn logic_and(&mut self) -> Expression {
         binary_expression! { self.match_logical_binary_expression(equality) {
             SimpleToken::And => LogicalBinaryOp::And,
         } }
     }
 
-    fn equality(&mut self) -> LoxResult<Expression> {
+    fn equality(&mut self) -> Expression {
         binary_expression! { self.match_binary_expression(ternary) {
             SimpleToken::EqualEqual => BinaryOp::EqualEqual,
             SimpleToken::BangEqual => BinaryOp::BangEqual,
         } }
     }
 
-    fn ternary(&mut self) -> LoxResult<Expression> {
-        let comparison_expr = self.comparison()?;
+    fn ternary(&mut self) -> Expression {
+        let comparison_expr = self.comparison();
 
         if self.consume_next(SimpleToken::QuestionMark) {
-            let true_expr = self.expression()?;
+            let true_expr = self.expression();
+            self.expect_and_skip_to(SimpleToken::Colon);
+            let false_expr = self.expression();
 
-            self.expect_next(SimpleToken::Colon)?;
-
-            let false_expr = self.expression()?;
-
-            Ok(Expression::Ternary(
+            Expression::Ternary(
                 self.current_position(),
                 Box::new(comparison_expr),
                 Box::new(true_expr),
                 Box::new(false_expr),
-            ))
+            )
         } else {
-            Ok(comparison_expr)
+            comparison_expr
         }
     }
 
-    fn comparison(&mut self) -> LoxResult<Expression> {
+    fn comparison(&mut self) -> Expression {
         binary_expression! { self.match_binary_expression(term) {
             SimpleToken::Greater => BinaryOp::Greater,
             SimpleToken::GreaterEqual => BinaryOp::GreaterEqual,
@@ -486,125 +545,128 @@ impl<Iter: Iterator<Item = PositionedToken>> Parser<Iter> {
         } }
     }
 
-    fn term(&mut self) -> LoxResult<Expression> {
+    fn term(&mut self) -> Expression {
         binary_expression! { self.match_binary_expression(factor) {
             SimpleToken::Plus => BinaryOp::Plus,
             SimpleToken::Minus => BinaryOp::Minus,
         } }
     }
 
-    fn factor(&mut self) -> LoxResult<Expression> {
+    fn factor(&mut self) -> Expression {
         binary_expression! { self.match_binary_expression(unary) {
             SimpleToken::Star => BinaryOp::Star,
             SimpleToken::Slash => BinaryOp::Slash,
         } }
     }
 
-    fn unary(&mut self) -> LoxResult<Expression> {
+    fn unary(&mut self) -> Expression {
         if self.consume_next(SimpleToken::Minus) {
-            Ok(Expression::Unary(
-                self.current_position(),
-                UnaryOp::Minus,
-                Box::new(self.unary()?),
-            ))
+            let position = self.current_position();
+            Expression::Unary(position, UnaryOp::Minus, Box::new(self.unary()))
         } else if self.consume_next(SimpleToken::Bang) {
-            Ok(Expression::Unary(
-                self.current_position(),
-                UnaryOp::Bang,
-                Box::new(self.unary()?),
-            ))
+            let position = self.current_position();
+            Expression::Unary(position, UnaryOp::Bang, Box::new(self.unary()))
         } else if self.consume_next(SimpleToken::LeftParen) {
-            let ret = Expression::Unary(
-                self.current_position(),
-                UnaryOp::Grouping,
-                Box::new(self.expression()?),
-            );
-            self.expect_next(SimpleToken::RightParen)?;
-            Ok(ret)
+            let position = self.current_position();
+            let expr = self.expression();
+            self.expect_and_skip_to(SimpleToken::RightParen);
+
+            Expression::Unary(position, UnaryOp::Grouping, Box::new(expr))
         } else {
             self.call()
         }
     }
 
-    fn finish_call(&mut self, callee: Expression) -> LoxResult<Expression> {
+    fn finish_call(&mut self, callee: Expression) -> Expression {
         let mut arguments = Vec::new();
 
-        if !self.match_next(SimpleToken::RightParen) {
+        if !self.consume_next(SimpleToken::RightParen) {
             loop {
                 // Parse a single argument - use assignment so we don't parse comma sequences
-                arguments.push(self.assignment()?);
+                arguments.push(self.assignment());
 
-                // If there is no comma, we're done
                 if !self.consume_next(SimpleToken::Comma) {
-                    break;
+                    self.expect_and_skip_to(SimpleToken::RightParen);
+
+                    break Expression::Call(self.current_position(), Box::new(callee), arguments);
                 }
             }
+        } else {
+            Expression::Call(self.current_position(), Box::new(callee), arguments)
         }
-
-        self.expect_next(SimpleToken::RightParen)?;
-
-        Ok(Expression::Call(
-            self.current_position(),
-            Box::new(callee),
-            arguments,
-        ))
     }
 
-    fn call(&mut self) -> LoxResult<Expression> {
-        let mut expr = self.primary()?;
+    fn call(&mut self) -> Expression {
+        let mut expr = self.primary();
 
         loop {
             if self.consume_next(SimpleToken::LeftParen) {
-                expr = self.finish_call(expr)?
+                expr = self.finish_call(expr);
             } else if self.consume_next(SimpleToken::Dot) {
-                let name = self.advance_identifier()?;
-                expr = Expression::Get(expr.position().clone(), Box::new(expr), name);
+                match self.advance_identifier() {
+                    Some(identifier) => {
+                        expr = Expression::Get(self.current_position(), Box::new(expr), identifier);
+                    }
+                    None => {
+                        // Return what we have and hope we can go on
+                        break self.error_expression();
+                    }
+                }
             } else {
-                break Ok(expr);
+                break expr;
             }
         }
     }
 
-    fn primary(&mut self) -> LoxResult<Expression> {
+    fn primary(&mut self) -> Expression {
         match self.advance_token() {
-            Some(Token::Literal(value)) => Ok(Expression::Literal(self.current_position(), value)),
-            Some(Token::Identifier(name)) => {
-                Ok(Expression::VariableGet(self.current_position(), name))
-            }
+            Some(Token::Literal(value)) => Expression::Literal(self.current_position(), value),
+            Some(Token::Identifier(name)) => Expression::VariableGet(self.current_position(), name),
             Some(Token::Simple(SimpleToken::Nil)) => {
-                Ok(Expression::Literal(self.current_position(), Nil.into()))
+                Expression::Literal(self.current_position(), Nil.into())
             }
             Some(Token::Simple(SimpleToken::True)) => {
-                Ok(Expression::Literal(self.current_position(), true.into()))
+                Expression::Literal(self.current_position(), true.into())
             }
             Some(Token::Simple(SimpleToken::False)) => {
-                Ok(Expression::Literal(self.current_position(), false.into()))
+                Expression::Literal(self.current_position(), false.into())
             }
-            Some(Token::Simple(SimpleToken::This)) => Ok(Expression::This(
-                self.current_position(),
-                "this".to_string(),
-            )),
+            Some(Token::Simple(SimpleToken::This)) => {
+                Expression::This(self.current_position(), "this".to_string())
+            }
             Some(Token::Simple(SimpleToken::Super)) => {
-                self.expect_next(SimpleToken::Dot)?;
+                if self.expect_next(SimpleToken::Dot) {
+                    match self.advance_identifier() {
+                        Some(identifier) => Expression::Super(
+                            self.current_position(),
+                            "this".to_string(),
+                            "super".to_string(),
+                            identifier,
+                        ),
 
-                Ok(Expression::Super(
-                    self.current_position(),
-                    "this".to_string(),
-                    "super".to_string(),
-                    self.advance_identifier()?,
-                ))
+                        None => self.error_expression(),
+                    }
+                } else {
+                    // Treat super without a dot as an access to a variable
+                    // called super, which obviously can't exist.
+                    self.emit_error(LoxError::ExpectedToken(
+                        self.current_position(),
+                        SimpleToken::Dot,
+                    ));
+                    Expression::VariableGet(self.current_position(), "super".to_string())
+                }
             }
-            Some(Token::Simple(SimpleToken::EndOfFile)) => {
-                Err(LoxError::IncompleteExpression(self.current_position()))
+            Some(token) => {
+                self.emit_error(LoxError::UnexpectedToken(self.current_position(), token));
+                self.error_expression()
             }
-            Some(token) => Err(LoxError::UnexpectedToken(token, self.current_position())),
             None => panic!("End of file token missing"),
         }
     }
 }
 
-impl<Iter: Iterator<Item = PositionedToken>> Iterator for Parser<Iter> {
-    type Item = LoxResult<Statement>;
+impl<Iter: CollectedErrors<Item = PositionedToken>> Iterator for Parser<Iter> {
+    type Item = Statement;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.peek().map(|t| t.token()) {
@@ -614,22 +676,37 @@ impl<Iter: Iterator<Item = PositionedToken>> Iterator for Parser<Iter> {
     }
 }
 
+impl<Iter: CollectedErrors<Item = PositionedToken>> CollectedErrors for Parser<Iter> {
+    fn errors(self) -> Option<Vec<LoxError>> {
+        match (self.tokens.errors(), self.errors) {
+            (Some(mut token_errors), Some(mut errors)) => {
+                token_errors.append(&mut errors);
+                Some(token_errors)
+            }
+
+            (Some(errors), None) | (None, Some(errors)) => Some(errors),
+
+            (None, None) => None,
+        }
+    }
+}
+
 pub fn parse(
-    tokens: impl IntoIterator<Item = PositionedToken>,
-) -> impl Iterator<Item = LoxResult<Statement>> {
-    Parser::new(tokens.into_iter())
+    tokens: impl CollectibleErrors<Item = PositionedToken>,
+) -> impl CollectedErrors<Item = Statement> {
+    Parser::new(tokens.collect_errors())
 }
 
 pub trait Parseable {
-    type Parser: Iterator<Item = LoxResult<Statement>>;
+    type Parser: CollectedErrors<Item = Statement>;
 
     fn parse(self) -> Self::Parser;
 }
 
-impl<Iter: IntoIterator<Item = PositionedToken>> Parseable for Iter {
-    type Parser = Parser<Iter::IntoIter>;
+impl<Iter: CollectibleErrors<Item = PositionedToken>> Parseable for Iter {
+    type Parser = Parser<Iter::Collector>;
 
     fn parse(self) -> Self::Parser {
-        Self::Parser::new(self.into_iter())
+        Self::Parser::new(self.collect_errors())
     }
 }

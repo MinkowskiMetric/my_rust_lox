@@ -43,6 +43,7 @@ pub enum BaseStatement<Identifier: fmt::Display + fmt::Debug + Clone> {
     ),
     While(Position, BaseExpression<Identifier>, Box<Self>),
     Return(Position, Option<BaseExpression<Identifier>>),
+    ErrorPlaceholder(Position),
 }
 
 impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseStatement<Identifier> {
@@ -56,7 +57,8 @@ impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseStatement<Identifier> {
             | Self::Block(pos, ..)
             | Self::If(pos, ..)
             | Self::While(pos, ..)
-            | Self::Return(pos, ..) => pos,
+            | Self::Return(pos, ..)
+            | Self::ErrorPlaceholder(pos, ..) => pos,
         }
     }
 }
@@ -102,6 +104,9 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
             }
             BaseStatement::<Identifier>::Return(position, expression) => {
                 self.accept_return(position, expression.as_ref())
+            }
+            BaseStatement::<Identifier>::ErrorPlaceholder(position) => {
+                self.accept_error_statement(position)
             }
         }
     }
@@ -160,6 +165,7 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
         position: &Position,
         expr: Option<&BaseExpression<Identifier>>,
     ) -> Self::Return;
+    fn accept_error_statement(&mut self, position: &Position) -> Self::Return;
 }
 
 struct StatementFormatter<'a, 'b> {
@@ -288,6 +294,10 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
             Some(expr) => writeln!(self.f, "return {};", expr),
             None => writeln!(self.f, "return;"),
         }
+    }
+
+    fn accept_error_statement(&mut self, position: &Position) -> Self::Return {
+        writeln!(self.f, "ERROR STATEMENT: {}", position)
     }
 }
 

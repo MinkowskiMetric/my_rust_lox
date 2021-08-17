@@ -1,7 +1,7 @@
 use crate::{Position, Value};
 use std::fmt;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum SimpleToken {
     LeftParen,

@@ -1,15 +1,14 @@
-use crate::{BValue, BValueType, Position, Token, Value};
+use crate::{BValue, BValueType, Position, SimpleToken, Token, Value};
 use std::{error, fmt, io};
 
 #[derive(Debug)]
 pub enum LoxError {
+    MultipleErrors(Vec<LoxError>),
     InvalidCharacter(char, Position),
-    TokenizationError(Vec<LoxError>),
     UnexpectedEndOfFile(Position),
     UnknownEscapeSequence(char, Position),
     InvalidNumber(std::num::ParseFloatError, Position),
     IoError(io::Error),
-    UnexpectedToken(Token, Position),
     IncompleteExpression(Position),
     ValueError(Value, String),
     BValueTypeError(BValue, BValueType),
@@ -21,6 +20,10 @@ pub enum LoxError {
     SuperOutsideMethod(Position),
     ReturnFromInitializer(Position),
     IncorrectArgumentCount,
+
+    ExpectedToken(Position, SimpleToken),
+    UnexpectedToken(Position, Token),
+    ExpectedIdentifier(Position),
 }
 
 impl From<io::Error> for LoxError {
@@ -47,7 +50,6 @@ impl fmt::Display for LoxError {
             }
             Self::InvalidNumber(err, pos) => write!(f, "Number error {} at {}", err, pos),
             Self::IoError(err) => write!(f, "{}", err),
-            Self::UnexpectedToken(token, pos) => write!(f, "Unexpected token {} at {}", token, pos),
             Self::IncompleteExpression(pos) => write!(f, "Incomplete expression at {}", pos),
             Self::ValueError(value, expected) => {
                 write!(f, "Found value {}, expected {}", value, expected)
@@ -70,12 +72,14 @@ impl fmt::Display for LoxError {
             Self::ReturnFromInitializer(pos) => write!(f, "Return from initializer at {}", pos),
             Self::IncorrectArgumentCount => write!(f, "Incorrect argument count"),
 
-            Self::TokenizationError(errs) => {
+            Self::MultipleErrors(errs) => {
                 for err in errs {
                     writeln!(f, "{}", err)?;
                 }
                 Ok(())
             }
+
+            other => write!(f, "{:?}", other),
         }
     }
 }

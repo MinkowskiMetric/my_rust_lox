@@ -80,6 +80,7 @@ pub enum BaseExpression<Identifier: fmt::Display + fmt::Debug + Clone> {
     Set(Position, Box<Self>, String, Box<Self>),
     This(Position, Identifier),
     Super(Position, Identifier, Identifier, String),
+    ErrorPlaceholder(Position),
 }
 
 impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
@@ -96,7 +97,8 @@ impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseExpression<Identifier> {
             | Self::Get(pos, ..)
             | Self::Set(pos, ..)
             | Self::This(pos, ..)
-            | Self::Super(pos, ..) => pos,
+            | Self::Super(pos, ..)
+            | Self::ErrorPlaceholder(pos, ..) => pos,
         }
     }
 }
@@ -176,6 +178,10 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
                 super_identifier,
                 name,
             ) => self.accept_super(position, this_identifier, super_identifier, name),
+
+            BaseExpression::<Identifier>::ErrorPlaceholder(position) => {
+                self.accept_error_expression(position)
+            }
         }
     }
 
@@ -241,6 +247,7 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
         super_identifier: &Identifier,
         name: &String,
     ) -> Self::Return;
+    fn accept_error_expression(&mut self, position: &Position) -> Self::Return;
 }
 
 struct ExpressionPrinter<'a, 'b> {
@@ -363,6 +370,10 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Id
         name: &String,
     ) -> Self::Return {
         write!(self.f, "super.{}", name)
+    }
+
+    fn accept_error_expression(&mut self, position: &Position) -> Self::Return {
+        write!(self.f, "ERROR EXPRESSION {}", position)
     }
 }
 
