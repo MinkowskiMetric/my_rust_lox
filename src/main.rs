@@ -4,6 +4,7 @@ mod bvalue;
 mod callable;
 mod class;
 mod error;
+mod error_collector;
 mod instance;
 mod interpreter;
 mod lexer;
@@ -17,8 +18,11 @@ pub use bvalue::{BValue, BValueType};
 pub use callable::{Callable, NativeCallable, ScriptCallable};
 pub use class::Class;
 pub use error::{LoxError, LoxResult, UnwindableLoxError, UnwindableLoxResult};
+pub use error_collector::{
+    adapt_errors, CollectedErrors, CollectibleErrors, CompilerResult, ErrorCollector,
+};
 pub use instance::{Instance, InstanceRef};
-pub use interpreter::{interpret, Environment, EnvironmentRef, Interpreter};
+pub use interpreter::{interpret, Environment, EnvironmentRef, Interpretable, Interpreter};
 pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};
 pub use parser::{
     parse, BaseExpression, BinaryOp, Expression, ExpressionVisitor, FuncType, LogicalBinaryOp,
@@ -45,25 +49,18 @@ fn run_interactive() -> LoxResult<()> {
 
             parse_data.push_str(&line);
 
-            let statements: LoxResult<Vec<_>> = tokenize(&parse_data, "interactive", 1)
-                .and_then(|tokens| tokens.parse().resolve().collect::<LoxResult<Vec<_>>>());
+            let result: CompilerResult<Vec<_>> = tokenize(&parse_data, "interactive", 1)
+                .parse()
+                .resolve()
+                .result();
+            match result {
+                CompilerResult::Succeeded(stmts) => match stmts.interpret(&mut interpreter) {
+                    Ok(_) => (),
+                    Err(err) => break Err(err),
+                },
 
-            match statements {
-                Err(LoxError::IncompleteExpression(_)) => continue, // Get the next line
-                Err(err) => {
-                    break Err(err);
-                }
-
-                Ok(statements) => {
-                    parse_data = String::new();
-
-                    match interpreter.accept_statements(statements.iter()) {
-                        Ok(_) => (),
-                        Err(err) => {
-                            break Err(err);
-                        }
-                    };
-                }
+                CompilerResult::Partial(_) => continue,
+                CompilerResult::Failed(errors) => break Err(LoxError::MultipleErrors(errors)),
             }
         };
 
@@ -74,9 +71,19 @@ fn run_interactive() -> LoxResult<()> {
 }
 
 fn run_file(input_file: &str) -> LoxResult<()> {
-    lexer::tokenize_file(input_file)
-        .and_then(|tokens| tokens.parse().resolve().collect())
-        .and_then(|stmts: Vec<_>| interpret(&stmts))
+    let stmts = match tokenize_file(input_file)?
+        .parse()
+        .resolve()
+        .result::<Vec<_>>()
+    {
+        CompilerResult::Failed(errors) | CompilerResult::Partial(errors) => {
+            Err(LoxError::MultipleErrors(errors))
+        }
+
+        CompilerResult::Succeeded(stmts) => Ok(stmts),
+    }?;
+
+    interpret(&stmts)
 }
 
 fn main() {

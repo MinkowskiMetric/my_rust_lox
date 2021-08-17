@@ -445,6 +445,10 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
             .map(|method| Value::from(method.bind(this)))
             .ok_or_else(|| LoxError::UnknownVariable(name.to_string()))
     }
+
+    fn accept_error_expression(&mut self, position: &Position) -> Self::Return {
+        panic!("Cannot execute error expression {}", position)
+    }
 }
 
 impl StatementVisitor<ResolvedIdentifier> for Interpreter {
@@ -578,9 +582,23 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
 
         Err(UnwindableLoxError::Return(value))
     }
+
+    fn accept_error_statement(&mut self, position: &Position) -> Self::Return {
+        panic!("Cannot execute error statement {}", position)
+    }
 }
 
 pub fn interpret<'a>(stmts: impl IntoIterator<Item = &'a ResolvedStatement>) -> LoxResult<()> {
     Interpreter::new()?.accept_statements(stmts)?;
     Ok(())
+}
+
+pub trait Interpretable {
+    fn interpret(self, interpreter: &mut Interpreter) -> LoxResult<()>;
+}
+
+impl<'a, Iter: IntoIterator<Item = &'a ResolvedStatement>> Interpretable for Iter {
+    fn interpret(self, interpreter: &mut Interpreter) -> LoxResult<()> {
+        interpreter.accept_statements(self).map(|_| ())
+    }
 }

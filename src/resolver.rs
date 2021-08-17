@@ -1,7 +1,7 @@
 use crate::{
-    BinaryOp, Expression, ExpressionVisitor, FuncType, LogicalBinaryOp, LoxError, LoxResult,
-    Position, ResolvedExpression, ResolvedIdentifier, ResolvedStatement, Statement,
-    StatementVisitor, UnaryOp, Value,
+    BinaryOp, CollectedErrors, CollectibleErrors, Expression, ExpressionVisitor, FuncType,
+    LogicalBinaryOp, LoxError, LoxResult, Position, ResolvedExpression, ResolvedIdentifier,
+    ResolvedStatement, Statement, StatementVisitor, UnaryOp, Value,
 };
 use std::collections::HashMap;
 
@@ -292,6 +292,10 @@ impl ExpressionVisitor<String> for Resolver {
             name.to_string(),
         ))
     }
+
+    fn accept_error_expression(&mut self, position: &Position) -> Self::Return {
+        Ok(ResolvedExpression::ErrorPlaceholder(position.clone()))
+    }
 }
 
 impl StatementVisitor<String> for Resolver {
@@ -456,20 +460,53 @@ impl StatementVisitor<String> for Resolver {
             Ok(ResolvedStatement::Return(position.clone(), expr))
         }
     }
+
+    fn accept_error_statement(&mut self, position: &Position) -> Self::Return {
+        Ok(ResolvedStatement::ErrorPlaceholder(position.clone()))
+    }
 }
 
 pub struct ResolverIterator<Iter> {
     resolver: Resolver,
-    iter: Iter,
+    iter: Option<Iter>,
+    upstream_errors: Option<Vec<LoxError>>,
+    errors: Option<Vec<LoxError>>,
 }
 
-impl<Iter: Iterator<Item = LoxResult<Statement>>> Iterator for ResolverIterator<Iter> {
-    type Item = LoxResult<ResolvedStatement>;
+impl<Iter: CollectedErrors<Item = Statement>> Iterator for ResolverIterator<Iter> {
+    type Item = ResolvedStatement;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|r| r.and_then(|s| self.resolver.accept_statement(&s)))
+        loop {
+            match self.iter.as_mut().and_then(Iter::next) {
+                None => {
+                    if let Some(iter) = self.iter.take() {
+                        self.upstream_errors = iter.errors();
+                    }
+                    break None;
+                }
+
+                Some(stmt) => match self.resolver.accept_statement(&stmt) {
+                    Ok(stmt) => break Some(stmt),
+                    Err(err) => self.errors.get_or_insert_with(Vec::new).push(err),
+                },
+            }
+        }
+    }
+}
+
+impl<Iter: CollectedErrors<Item = Statement>> CollectedErrors for ResolverIterator<Iter> {
+    fn errors(self) -> Option<Vec<LoxError>> {
+        match (self.upstream_errors, self.errors) {
+            (Some(mut upstream_errors), Some(mut errors)) => {
+                upstream_errors.append(&mut errors);
+                Some(upstream_errors)
+            }
+
+            (Some(errors), None) | (None, Some(errors)) => Some(errors),
+
+            (None, None) => None,
+        }
     }
 }
 
@@ -488,18 +525,20 @@ pub fn resolve_statement(statement: &Statement) -> LoxResult<ResolvedStatement> 
 }
 
 pub trait Resolvable {
-    type Resolver: Iterator<Item = LoxResult<ResolvedStatement>>;
+    type Resolver: Iterator<Item = ResolvedStatement>;
 
     fn resolve(self) -> Self::Resolver;
 }
 
-impl<Iter: IntoIterator<Item = LoxResult<Statement>>> Resolvable for Iter {
-    type Resolver = ResolverIterator<Iter::IntoIter>;
+impl<Iter: CollectibleErrors<Item = Statement>> Resolvable for Iter {
+    type Resolver = ResolverIterator<Iter::Collector>;
 
     fn resolve(self) -> Self::Resolver {
         ResolverIterator {
             resolver: Resolver::new(),
-            iter: self.into_iter(),
+            iter: Some(self.collect_errors()),
+            upstream_errors: None,
+            errors: None,
         }
     }
 }
