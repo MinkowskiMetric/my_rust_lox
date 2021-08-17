@@ -1,6 +1,6 @@
 use crate::{
     Class, Environment, EnvironmentRef, FuncType, Instance, Interpreter, LoxError, LoxResult,
-    ResolvedStatement, Value,
+    ResolvedFuncDefinition, Value,
 };
 use std::{cell::RefCell, fmt, rc::Rc};
 
@@ -61,23 +61,14 @@ impl<F: Fn(&mut Interpreter, &[Value]) -> LoxResult<Value>> fmt::Display for Nat
 
 #[derive(Debug, Clone)]
 pub struct ScriptCallable {
-    func_type: FuncType,
-    parameters: Vec<String>,
-    body: ResolvedStatement,
+    func_definition: ResolvedFuncDefinition,
     env: EnvironmentRef,
 }
 
 impl ScriptCallable {
-    pub fn new(
-        func_type: FuncType,
-        parameters: &[String],
-        body: &ResolvedStatement,
-        env: &EnvironmentRef,
-    ) -> Rc<Self> {
+    pub fn new(func_definition: ResolvedFuncDefinition, env: &EnvironmentRef) -> Rc<Self> {
         Rc::new(Self {
-            func_type,
-            parameters: parameters.to_vec(),
-            body: body.clone(),
+            func_definition,
             env: env.clone(),
         })
     }
@@ -90,18 +81,13 @@ impl ScriptCallable {
 
         let new_environment = Rc::new(RefCell::new(new_environment));
 
-        Self::new(
-            self.func_type,
-            &self.parameters,
-            &self.body,
-            &new_environment,
-        )
+        Self::new(self.func_definition.clone(), &new_environment)
     }
 }
 
 impl Callable for ScriptCallable {
     fn func_type(&self) -> FuncType {
-        self.func_type
+        *self.func_definition.func_type()
     }
 
     fn call(
@@ -109,15 +95,16 @@ impl Callable for ScriptCallable {
         interpreter: &mut Interpreter,
         arguments: &[Value],
     ) -> LoxResult<Value> {
-        if self.parameters.len() != arguments.len() {
+        let parameters = self.func_definition.parameters();
+        if parameters.len() != arguments.len() {
             Err(LoxError::IncorrectArgumentCount)
         } else {
             let mut frame = interpreter.create_function_frame(&self.env);
-            for i in 0..self.parameters.len() {
-                frame.declare_variable(&self.parameters[i], arguments[i].clone())?;
+            for i in 0..parameters.len() {
+                frame.declare_variable(&parameters[i], arguments[i].clone())?;
             }
 
-            let ret = frame.call_function(&self.body)?;
+            let ret = frame.call_function(&self.func_definition.body())?;
 
             Ok(if self.func_type() == FuncType::Initializer {
                 self.env

@@ -1,41 +1,34 @@
 use crate::{
     Callable, EnvironmentRef, FuncType, Instance, Interpreter, LoxError, LoxResult,
-    ResolvedStatement, ScriptCallable, Value,
+    ResolvedClassDefinition, ScriptCallable, Value,
 };
-use std::{collections::HashMap, fmt, rc::Rc};
+use std::{fmt, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub struct Class {
-    name: String,
+    class_definition: ResolvedClassDefinition,
     superclass: Option<Rc<Self>>,
-    methods: HashMap<String, ResolvedStatement>,
     env: EnvironmentRef,
 }
 
 impl Class {
     pub fn new(
-        name: &str,
+        class_definition: ResolvedClassDefinition,
         superclass: Option<Rc<Self>>,
-        methods: HashMap<String, ResolvedStatement>,
         env: &EnvironmentRef,
     ) -> Rc<Self> {
         Rc::new(Self {
-            name: name.to_string(),
+            class_definition,
             superclass,
-            methods,
             env: env.clone(),
         })
     }
 
     pub fn lookup_method(&self, name: &str) -> Option<Rc<ScriptCallable>> {
-        self.methods
+        self.class_definition
+            .methods()
             .get(name)
-            .map(|stmt| match stmt {
-                ResolvedStatement::FuncDeclaration(_, func_type, _, parameters, body) => {
-                    ScriptCallable::new(*func_type, parameters, body, &self.env)
-                }
-                stmt => panic!("Unexpected statement {:?} in class method {}", stmt, name),
-            })
+            .map(|func_definition| ScriptCallable::new(func_definition.clone(), &self.env))
             .or_else(|| {
                 self.superclass
                     .as_ref()
@@ -46,7 +39,7 @@ impl Class {
 
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "class({})", self.name)
+        write!(f, "class({})", self.class_definition.identifier())
     }
 }
 
