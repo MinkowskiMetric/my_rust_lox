@@ -1,8 +1,8 @@
 use crate::{
-    BinaryOp, Callable, Class, ExpressionVisitor, FuncType, Instance, InstanceRef, LogicalBinaryOp,
-    LoxError, LoxResult, NativeCallable, Nil, Position, ResolvedExpression, ResolvedIdentifier,
-    ResolvedStatement, ScriptCallable, StatementVisitor, UnaryOp, UnwindableLoxError,
-    UnwindableLoxResult, Value,
+    BinaryOp, Callable, Class, ExpressionVisitor, Instance, InstanceRef, LogicalBinaryOp, LoxError,
+    LoxResult, NativeCallable, Nil, Position, ResolvedClassDefinition, ResolvedExpression,
+    ResolvedFuncDefinition, ResolvedIdentifier, ResolvedStatement, ScriptCallable,
+    StatementVisitor, UnaryOp, UnwindableLoxError, UnwindableLoxResult, Value,
 };
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -487,12 +487,10 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
     fn accept_func_declaration(
         &mut self,
         _position: &Position,
-        func_type: FuncType,
-        identifier: &str,
-        parameters: &[String],
-        body: &ResolvedStatement,
+        func_definition: &ResolvedFuncDefinition,
     ) -> Self::Return {
-        let value = ScriptCallable::new(func_type, parameters, body, self.get_env_ref()).into();
+        let identifier = func_definition.identifier().clone();
+        let value = ScriptCallable::new(func_definition.clone(), self.get_env_ref()).into();
         self.declare_variable(identifier, value)?;
         Ok(())
     }
@@ -500,28 +498,30 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
     fn accept_class_declaration(
         &mut self,
         _position: &Position,
-        name: &str,
-        superclass_name: Option<&ResolvedIdentifier>,
-        methods: &HashMap<String, ResolvedStatement>,
+        class_definition: &ResolvedClassDefinition,
     ) -> Self::Return {
-        let class = match superclass_name {
+        let class = match class_definition.superclass_identifier() {
             Some(superclass_name) => {
                 let superclass = Rc::<Class>::try_from(self.get_variable(superclass_name)?)?;
 
                 self.push_nested_environment();
                 self.declare_variable("super", superclass.clone().into())?;
 
-                let class = Class::new(name, Some(superclass), methods.clone(), self.get_env_ref());
+                let class = Class::new(
+                    class_definition.clone(),
+                    Some(superclass),
+                    self.get_env_ref(),
+                );
 
                 self.pop_environment();
 
                 class
             }
 
-            None => Class::new(name, None, methods.clone(), self.get_env_ref()),
+            None => Class::new(class_definition.clone(), None, self.get_env_ref()),
         };
 
-        self.declare_variable(name, class.into())?;
+        self.declare_variable(class_definition.identifier(), class.into())?;
         Ok(())
     }
 

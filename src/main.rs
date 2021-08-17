@@ -25,8 +25,9 @@ pub use instance::{Instance, InstanceRef};
 pub use interpreter::{interpret, Environment, EnvironmentRef, Interpretable, Interpreter};
 pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};
 pub use parser::{
-    parse, BaseExpression, BinaryOp, Expression, ExpressionVisitor, FuncType, LogicalBinaryOp,
-    Parseable, Parser, ResolvedExpression, ResolvedIdentifier, ResolvedStatement, Statement,
+    parse, BaseExpression, BinaryOp, ClassDefinition, Expression, ExpressionVisitor,
+    FuncDefinition, FuncType, LogicalBinaryOp, Parseable, Parser, ResolvedClassDefinition,
+    ResolvedExpression, ResolvedFuncDefinition, ResolvedIdentifier, ResolvedStatement, Statement,
     StatementVisitor, UnaryOp,
 };
 pub use position::{FilePos, Position};

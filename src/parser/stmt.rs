@@ -28,12 +28,86 @@ impl FuncType {
 }
 
 #[derive(Debug, Clone)]
+pub struct BaseFuncDefinition<Identifier: fmt::Display + fmt::Debug + Clone> {
+    func_type: FuncType,
+    identifier: String,
+    parameters: Vec<String>,
+    body: Box<BaseStatement<Identifier>>,
+}
+
+impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseFuncDefinition<Identifier> {
+    pub fn new(
+        func_type: FuncType,
+        identifier: String,
+        parameters: Vec<String>,
+        body: BaseStatement<Identifier>,
+    ) -> Self {
+        Self {
+            func_type,
+            identifier,
+            parameters,
+            body: Box::new(body),
+        }
+    }
+
+    pub fn func_type(&self) -> &FuncType {
+        &self.func_type
+    }
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+    pub fn parameters(&self) -> &[String] {
+        &self.parameters
+    }
+    pub fn body(&self) -> &BaseStatement<Identifier> {
+        &self.body
+    }
+}
+
+pub type FuncDefinition = BaseFuncDefinition<String>;
+pub type ResolvedFuncDefinition = BaseFuncDefinition<ResolvedIdentifier>;
+
+#[derive(Debug, Clone)]
+pub struct BaseClassDefinition<Identifier: fmt::Display + fmt::Debug + Clone> {
+    identifier: String,
+    superclass_identifier: Option<Identifier>,
+    methods: HashMap<String, BaseFuncDefinition<Identifier>>,
+}
+
+pub type ClassDefinition = BaseClassDefinition<String>;
+pub type ResolvedClassDefinition = BaseClassDefinition<ResolvedIdentifier>;
+
+impl<Identifier: fmt::Display + fmt::Debug + Clone> BaseClassDefinition<Identifier> {
+    pub fn new(
+        identifier: String,
+        superclass_identifier: Option<Identifier>,
+        methods: HashMap<String, BaseFuncDefinition<Identifier>>,
+    ) -> Self {
+        Self {
+            identifier,
+            superclass_identifier,
+            methods,
+        }
+    }
+
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+    pub fn superclass_identifier(&self) -> Option<&Identifier> {
+        self.superclass_identifier.as_ref()
+    }
+    pub fn methods(&self) -> &HashMap<String, BaseFuncDefinition<Identifier>> {
+        &self.methods
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum BaseStatement<Identifier: fmt::Display + fmt::Debug + Clone> {
     Expression(Position, BaseExpression<Identifier>),
     Print(Position, BaseExpression<Identifier>),
     VarDeclaration(Position, String, BaseExpression<Identifier>),
-    FuncDeclaration(Position, FuncType, String, Vec<String>, Box<Self>),
-    ClassDeclaration(Position, String, Option<Identifier>, HashMap<String, Self>),
+    FuncDeclaration(Position, BaseFuncDefinition<Identifier>),
+    ClassDeclaration(Position, BaseClassDefinition<Identifier>),
     Block(Position, Vec<Self>),
     If(
         Position,
@@ -80,19 +154,12 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
             BaseStatement::<Identifier>::VarDeclaration(position, identifier, expr) => {
                 self.accept_var_declaration(position, identifier, expr)
             }
-            BaseStatement::<Identifier>::FuncDeclaration(
-                position,
-                func_type,
-                name,
-                parameters,
-                body,
-            ) => self.accept_func_declaration(position, *func_type, name, parameters, body),
-            BaseStatement::<Identifier>::ClassDeclaration(
-                position,
-                name,
-                superclass_name,
-                methods,
-            ) => self.accept_class_declaration(position, name, superclass_name.as_ref(), methods),
+            BaseStatement::<Identifier>::FuncDeclaration(position, func_definition) => {
+                self.accept_func_declaration(position, func_definition)
+            }
+            BaseStatement::<Identifier>::ClassDeclaration(position, class_definition) => {
+                self.accept_class_declaration(position, class_definition)
+            }
             BaseStatement::<Identifier>::Block(position, statements) => {
                 self.accept_block(position, statements)
             }
@@ -130,17 +197,12 @@ pub trait StatementVisitor<Identifier: fmt::Display + fmt::Debug + Clone> {
     fn accept_func_declaration(
         &mut self,
         position: &Position,
-        func_type: FuncType,
-        name: &str,
-        parameters: &[String],
-        body: &BaseStatement<Identifier>,
+        func_definition: &BaseFuncDefinition<Identifier>,
     ) -> Self::Return;
     fn accept_class_declaration(
         &mut self,
         position: &Position,
-        name: &str,
-        superclass_name: Option<&Identifier>,
-        methods: &HashMap<String, BaseStatement<Identifier>>,
+        class_definition: &BaseClassDefinition<Identifier>,
     ) -> Self::Return;
     fn accept_block(
         &mut self,
@@ -211,37 +273,42 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
     fn accept_func_declaration(
         &mut self,
         _position: &Position,
-        func_type: FuncType,
-        name: &str,
-        parameters: &[String],
-        body: &BaseStatement<Identifier>,
+        func_definition: &BaseFuncDefinition<Identifier>,
     ) -> Self::Return {
-        match func_type {
-            FuncType::Function => write!(self.f, "fun {} (", name)?,
-            FuncType::Method | FuncType::Initializer => write!(self.f, "{} (", name)?,
+        match func_definition.func_type() {
+            FuncType::Function => write!(self.f, "fun {} (", func_definition.identifier())?,
+            FuncType::Method | FuncType::Initializer => {
+                write!(self.f, "{} (", func_definition.identifier())?
+            }
         };
 
-        for parameter in parameters {
+        for parameter in func_definition.parameters() {
             write!(self.f, "{}, ", parameter)?;
         }
-        write!(self.f, ") {}", body)
+        write!(self.f, ") {}", func_definition.body())
     }
 
     fn accept_class_declaration(
         &mut self,
         _position: &Position,
-        name: &str,
-        superclass_name: Option<&Identifier>,
-        methods: &HashMap<String, BaseStatement<Identifier>>,
+        class_definition: &BaseClassDefinition<Identifier>,
     ) -> Self::Return {
-        match superclass_name {
-            Some(superclass_name) => writeln!(self.f, "class {} < {} {{", name, superclass_name),
-            None => writeln!(self.f, "class {} {{", name),
+        match class_definition.superclass_identifier() {
+            Some(superclass_identifier) => writeln!(
+                self.f,
+                "class {} < {} {{",
+                class_definition.identifier(),
+                superclass_identifier
+            ),
+            None => writeln!(self.f, "class {} {{", class_definition.identifier()),
         }?;
 
-        writeln!(self.f, "class {} {{", name)?;
-        for (_, method) in methods {
-            write!(self.f, "{}", method)?;
+        for (_, method) in class_definition.methods() {
+            write!(self.f, "{} (", method.identifier())?;
+            for parameter in method.parameters() {
+                write!(self.f, "{}, ", parameter)?;
+            }
+            write!(self.f, ") {}", method.body())?
         }
         writeln!(self.f, "}};")
     }

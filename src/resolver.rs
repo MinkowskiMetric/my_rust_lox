@@ -1,6 +1,7 @@
 use crate::{
-    BinaryOp, CollectedErrors, CollectibleErrors, Expression, ExpressionVisitor, FuncType,
-    LogicalBinaryOp, LoxError, LoxResult, Position, ResolvedExpression, ResolvedIdentifier,
+    BinaryOp, ClassDefinition, CollectedErrors, CollectibleErrors, Expression, ExpressionVisitor,
+    FuncDefinition, FuncType, LogicalBinaryOp, LoxError, LoxResult, Position,
+    ResolvedClassDefinition, ResolvedExpression, ResolvedFuncDefinition, ResolvedIdentifier,
     ResolvedStatement, Statement, StatementVisitor, UnaryOp, Value,
 };
 use std::collections::HashMap;
@@ -87,32 +88,28 @@ impl Resolver {
     fn resolve_function(
         &mut self,
         position: &Position,
-        func_type: FuncType,
-        name: &str,
-        parameters: &[String],
-        body: &Statement,
-    ) -> LoxResult<ResolvedStatement> {
+        func_definition: &FuncDefinition,
+    ) -> LoxResult<ResolvedFuncDefinition> {
         self.begin_scope();
 
-        let old_function_type = self.func_type.replace(func_type);
+        let old_function_type = self.func_type.replace(*func_definition.func_type());
 
-        for param in parameters {
+        for param in func_definition.parameters() {
             self.declare(position, param)?;
             self.define(param);
         }
 
-        let body = self.accept_statement(body)?;
+        let body = self.accept_statement(func_definition.body())?;
 
         self.func_type = old_function_type;
 
         self.end_scope();
 
-        Ok(ResolvedStatement::FuncDeclaration(
-            position.clone(),
-            func_type,
-            name.to_string(),
-            parameters.to_vec(),
-            Box::new(body),
+        Ok(ResolvedFuncDefinition::new(
+            *func_definition.func_type(),
+            func_definition.identifier().to_string(),
+            func_definition.parameters().to_vec(),
+            body,
         ))
     }
 }
@@ -339,29 +336,28 @@ impl StatementVisitor<String> for Resolver {
     fn accept_func_declaration(
         &mut self,
         position: &Position,
-        func_type: FuncType,
-        name: &str,
-        parameters: &[String],
-        body: &Statement,
+        func_definition: &FuncDefinition,
     ) -> Self::Return {
-        self.declare(position, name)?;
-        self.define(name);
+        self.declare(position, func_definition.identifier())?;
+        self.define(func_definition.identifier());
 
-        self.resolve_function(position, func_type, name, parameters, body)
+        Ok(ResolvedStatement::FuncDeclaration(
+            position.clone(),
+            self.resolve_function(position, func_definition)?,
+        ))
     }
 
     fn accept_class_declaration(
         &mut self,
         position: &Position,
-        name: &str,
-        superclass_name: Option<&String>,
-        methods: &HashMap<String, Statement>,
+        class_definition: &ClassDefinition,
     ) -> Self::Return {
-        self.declare(position, name)?;
-        self.define(name);
+        self.declare(position, class_definition.identifier())?;
+        self.define(class_definition.identifier());
 
-        let superclass_name =
-            superclass_name.map(|superclass_name| self.resolve_local(superclass_name));
+        let superclass_name = class_definition
+            .superclass_identifier()
+            .map(|superclass_name| self.resolve_local(superclass_name));
 
         if superclass_name.is_some() {
             self.begin_scope();
@@ -374,14 +370,12 @@ impl StatementVisitor<String> for Resolver {
         self.define("this");
 
         let ret = (|| {
-            let methods = methods
+            let methods = class_definition
+                .methods()
                 .iter()
-                .map(|(name, method)| match method {
-                    Statement::FuncDeclaration(position, func_type, _, parameters, body) => Ok((
-                        name.clone(),
-                        self.resolve_function(position, *func_type, name, parameters, body)?,
-                    )),
-                    stmt => panic!("Unexpected statement {} in class declaration", stmt),
+                .map(|(name, method)| {
+                    self.resolve_function(position, method)
+                        .map(|method| (name.clone(), method))
                 })
                 .collect::<LoxResult<HashMap<_, _>>>()?;
 
@@ -393,9 +387,11 @@ impl StatementVisitor<String> for Resolver {
 
             Ok(ResolvedStatement::ClassDeclaration(
                 position.clone(),
-                name.to_string(),
-                superclass_name,
-                methods,
+                ResolvedClassDefinition::new(
+                    class_definition.identifier().to_string(),
+                    superclass_name,
+                    methods,
+                ),
             ))
         })();
 

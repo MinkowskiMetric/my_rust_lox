@@ -1,7 +1,8 @@
 use super::Expression;
 use crate::{
-    BinaryOp, CollectedErrors, CollectibleErrors, FuncType, LogicalBinaryOp, LoxError, Nil,
-    Position, PositionedToken, SimpleToken, Statement, Token, UnaryOp, Value,
+    BinaryOp, ClassDefinition, CollectedErrors, CollectibleErrors, FuncDefinition, FuncType,
+    LogicalBinaryOp, LoxError, Nil, Position, PositionedToken, SimpleToken, Statement, Token,
+    UnaryOp, Value,
 };
 use std::collections::HashMap;
 
@@ -220,9 +221,11 @@ impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
         ret.unwrap_or_else(|| self.error_statement())
     }
 
-    fn func_declaration_impl(&mut self, func_type: FuncType, identifier: String) -> Statement {
-        let start_pos = self.current_position();
-
+    fn func_declaration_impl(
+        &mut self,
+        func_type: FuncType,
+        identifier: String,
+    ) -> Option<FuncDefinition> {
         if self.expect_next(SimpleToken::LeftParen) {
             let mut parameters = Vec::new();
 
@@ -246,23 +249,25 @@ impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
 
             let body = self.block();
 
-            Statement::FuncDeclaration(start_pos, func_type, identifier, parameters, Box::new(body))
+            Some(FuncDefinition::new(func_type, identifier, parameters, body))
         } else {
             self.skip_until(SimpleToken::RightBrace);
-            self.error_statement()
+            None
         }
     }
 
     fn func_declaration(&mut self) -> Statement {
         self.assert_next(SimpleToken::Fun);
 
-        match self.advance_identifier() {
-            Some(identifier) => self.func_declaration_impl(FuncType::Function, identifier),
-            None => self.error_statement(),
-        }
+        self.advance_identifier()
+            .and_then(|identifier| self.func_declaration_impl(FuncType::Function, identifier))
+            .map(|func_definition| {
+                Statement::FuncDeclaration(self.current_position(), func_definition)
+            })
+            .unwrap_or_else(|| self.error_statement())
     }
 
-    fn method_decaration(&mut self, name: String) -> Statement {
+    fn method_declaration(&mut self, name: String) -> Option<FuncDefinition> {
         if name == "init" {
             self.func_declaration_impl(FuncType::Initializer, name)
         } else {
@@ -288,19 +293,19 @@ impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
                     while !self.match_next(SimpleToken::RightBrace) {
                         let method_identifier =
                             self.advance_identifier().unwrap_or("FAKE METHOD".into());
-                        methods.insert(
-                            method_identifier.clone(),
-                            self.method_decaration(method_identifier),
-                        );
+
+                        if let Some(method_definition) =
+                            self.method_declaration(method_identifier.clone())
+                        {
+                            methods.insert(method_identifier, method_definition);
+                        }
                     }
 
                     self.expect_and_skip_to(SimpleToken::RightBrace);
 
                     Statement::ClassDeclaration(
                         start_pos,
-                        class_identifier,
-                        superclass_identifier,
-                        methods,
+                        ClassDefinition::new(class_identifier, superclass_identifier, methods),
                     )
                 } else {
                     self.skip_until(SimpleToken::RightBrace);
