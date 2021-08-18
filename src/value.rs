@@ -1,4 +1,4 @@
-use crate::{BValue, Callable, Class, InstanceRef, LoxError};
+use crate::{BValue, Callable, Class, InstanceRef, LoxError, ObjectBase};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
@@ -46,6 +46,12 @@ pub enum Value {
     String(String),
     Callable(CallableHolder),
     Instance(InstanceHolder),
+}
+
+impl Value {
+    pub unsafe fn from_object_ptr(ptr: *const ObjectBase) -> Self {
+        Self::BValue(BValue::from_object_ptr(ptr))
+    }
 }
 
 impl fmt::Display for Value {

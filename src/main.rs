@@ -1,3 +1,5 @@
+#![feature(maybe_uninit_extra)]
+
 use std::io;
 
 mod bvalue;
@@ -5,6 +7,7 @@ mod callable;
 mod class;
 mod error;
 mod error_collector;
+mod gc;
 mod instance;
 mod interpreter;
 mod lexer;
@@ -21,6 +24,7 @@ pub use error::{LoxError, LoxResult, UnwindableLoxError, UnwindableLoxResult};
 pub use error_collector::{
     adapt_errors, CollectedErrors, CollectibleErrors, CompilerResult, ErrorCollector,
 };
+pub use gc::ObjectBase;
 pub use instance::{Instance, InstanceRef};
 pub use interpreter::{interpret, Environment, EnvironmentRef, Interpretable, Interpreter};
 pub use lexer::{tokenize, tokenize_file, PositionedToken, SimpleToken, Token};

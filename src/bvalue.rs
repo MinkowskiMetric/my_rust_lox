@@ -1,5 +1,5 @@
-use crate::{LoxError, Nil};
-use core::{convert::TryFrom, fmt};
+use crate::{LoxError, Nil, ObjectBase};
+use std::{convert::TryFrom, fmt, ptr::NonNull};
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -17,9 +17,9 @@ pub enum BValueType {
     Nil = 0x0001_0000_0000_0000,
     True = 0x0002_0000_0000_0000,
     False = 0x0003_0000_0000_0000,
+    Object = 0x0004_0000_0000_0000,
 
     // Define these for completeness
-    Unused4 = 0x0004_0000_0000_0000,
     Unused5 = 0x0005_0000_0000_0000,
     Unused6 = 0x0006_0000_0000_0000,
     Unused7 = 0x0007_0000_0000_0000,
@@ -32,7 +32,7 @@ impl fmt::Display for BValueType {
             Self::Nil => "nil",
             Self::True => "true",
             Self::False => "false",
-            Self::Unused4 => "Unused4",
+            Self::Object => "Object",
             Self::Unused5 => "Unused5",
             Self::Unused6 => "Unused6",
             Self::Unused7 => "Unused7",
@@ -118,6 +118,35 @@ impl BValue {
             Self::false_val()
         }
     }
+
+    pub unsafe fn from_object_ptr(p: *const ObjectBase) -> Self {
+        let p: u64 = std::mem::transmute(p);
+        assert_eq!(p & 0xfff0_0000_0000_0000, 0, "Kernel pointer?");
+        Self::from_type_unchecked(BValueType::Object, p as u64)
+    }
+
+    pub unsafe fn to_object_ptr(self) -> Result<NonNull<ObjectBase>, LoxError> {
+        match self.value_type() {
+            BValueType::Object => {
+                let raw_ptr: *mut ObjectBase = std::mem::transmute(self.0 & 0x000f_ffff_ffff_ffff);
+                Ok(NonNull::new(raw_ptr).expect("Null pointer in object value should not be possible"))
+            },
+            _ => Err(LoxError::BValueTypeError(self, BValueType::Object)),
+        }
+    }
+
+    pub fn to_object_ref<'a>(&'a self) -> Result<&'a ObjectBase, LoxError> {
+        unsafe { self.to_object_ptr().map(|p| p.as_ref()) }
+    }
+
+    pub unsafe fn to_object_ptr_unchecked(self) -> NonNull<ObjectBase> {
+        let raw_ptr: *mut ObjectBase = std::mem::transmute(self.0 & 0x000f_ffff_ffff_ffff);
+        NonNull::new(raw_ptr).expect("Null pointer in object value should not be possible")
+    }
+
+    pub unsafe fn to_object_ref_unchecked<'a>(&'a self) -> &'a ObjectBase {
+        self.to_object_ptr_unchecked().as_ref()
+    }
 }
 
 impl fmt::Debug for BValue {
@@ -133,6 +162,7 @@ impl fmt::Display for BValue {
             BValueType::True => f.write_str("true"),
             BValueType::False => f.write_str("false"),
             BValueType::Number => unsafe { self.to_f64_unchecked() }.fmt(f),
+            BValueType::Object => f.write_str("object"),
 
             unknown_type => write!(f, "Unknown type {}", unknown_type),
         }
@@ -180,6 +210,14 @@ impl TryFrom<BValue> for f64 {
 
     fn try_from(v: BValue) -> Result<Self, Self::Error> {
         v.to_f64()
+    }
+}
+
+impl<'a> TryFrom<&'a BValue> for &'a ObjectBase {
+    type Error = LoxError;
+
+    fn try_from(v: &'a BValue) -> Result<Self, Self::Error> {
+        v.to_object_ref()
     }
 }
 
