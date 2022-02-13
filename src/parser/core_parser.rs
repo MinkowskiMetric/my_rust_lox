@@ -282,7 +282,10 @@ impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
         match self.advance_identifier() {
             Some(class_identifier) => {
                 let superclass_identifier = if self.consume_next(SimpleToken::Less) {
-                    Some(self.advance_identifier().unwrap_or("UNKNOWN CLASS".into()))
+                    Some(
+                        self.advance_identifier()
+                            .unwrap_or_else(|| "UNKNOWN CLASS".into()),
+                    )
                 } else {
                     None
                 };
@@ -291,8 +294,9 @@ impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
                     let mut methods = HashMap::new();
 
                     while !self.match_next(SimpleToken::RightBrace) {
-                        let method_identifier =
-                            self.advance_identifier().unwrap_or("FAKE METHOD".into());
+                        let method_identifier = self
+                            .advance_identifier()
+                            .unwrap_or_else(|| "FAKE METHOD".into());
 
                         if let Some(method_definition) =
                             self.method_declaration(method_identifier.clone())
@@ -485,7 +489,7 @@ impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
             Expression::VariableGet(_, identifier) if self.consume_next(SimpleToken::Equal) => {
                 Expression::Assignment(
                     self.current_position(),
-                    identifier.to_string(),
+                    identifier,
                     Box::new(self.assignment()),
                 )
             }
@@ -494,7 +498,7 @@ impl<Iter: CollectedErrors<Item = PositionedToken>> Parser<Iter> {
                 Expression::Set(
                     self.current_position(),
                     expr,
-                    identifier.to_string(),
+                    identifier,
                     Box::new(self.assignment()),
                 )
             }

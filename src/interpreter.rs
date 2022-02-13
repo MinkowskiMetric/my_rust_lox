@@ -168,25 +168,25 @@ impl Interpreter {
         }
     }
 
-    fn get_env_ref<'a>(&'a self) -> &'a EnvironmentRef {
+    fn get_env_ref(&self) -> &EnvironmentRef {
         self.environment_stack
             .last()
             .expect("Missing global environment")
     }
 
-    fn get_env<'a>(&'a self) -> Ref<'a, Environment> {
+    fn get_env(&self) -> Ref<'_, Environment> {
         self.get_env_ref().borrow()
     }
 
-    fn get_env_mut<'a>(&'a mut self) -> RefMut<'a, Environment> {
+    fn get_env_mut(&mut self) -> RefMut<'_, Environment> {
         self.get_env_ref().borrow_mut()
     }
 
-    fn get_global_env<'a>(&'a self) -> Ref<'a, Environment> {
+    fn get_global_env(&self) -> Ref<'_, Environment> {
         self.environment_stack[0].borrow()
     }
 
-    fn get_global_env_mut<'a>(&'a self) -> RefMut<'a, Environment> {
+    fn get_global_env_mut(&self) -> RefMut<'_, Environment> {
         self.environment_stack[0].borrow_mut()
     }
 
@@ -222,7 +222,7 @@ impl Interpreter {
     }
 
     fn push_function_environment(&mut self, enclosing: EnvironmentRef) {
-        let new_environment = Rc::new(RefCell::new(Environment::new(Some(enclosing.clone()))));
+        let new_environment = Rc::new(RefCell::new(Environment::new(Some(enclosing))));
         self.environment_stack.push(new_environment);
     }
 
@@ -398,7 +398,7 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
         &mut self,
         _position: &Position,
         object: &ResolvedExpression,
-        name: &String,
+        name: &str,
     ) -> Self::Return {
         let object = self.accept_expression(object)?;
         let object: &InstanceRef = &object.try_into()?;
@@ -410,7 +410,7 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
         &mut self,
         _position: &Position,
         object: &ResolvedExpression,
-        name: &String,
+        name: &str,
         value: &ResolvedExpression,
     ) -> Self::Return {
         let object = self.accept_expression(object)?;
@@ -435,7 +435,7 @@ impl ExpressionVisitor<ResolvedIdentifier> for Interpreter {
         _position: &Position,
         this_identifier: &ResolvedIdentifier,
         super_identifier: &ResolvedIdentifier,
-        name: &String,
+        name: &str,
     ) -> Self::Return {
         let this: Rc<Instance> = self.get_variable(this_identifier)?.try_into()?;
         let super_class: Rc<Class> = self.get_variable(super_identifier)?.try_into()?;
@@ -489,7 +489,7 @@ impl StatementVisitor<ResolvedIdentifier> for Interpreter {
         _position: &Position,
         func_definition: &ResolvedFuncDefinition,
     ) -> Self::Return {
-        let identifier = func_definition.identifier().clone();
+        let identifier = func_definition.identifier();
         let value = ScriptCallable::new(func_definition.clone(), self.get_env_ref()).into();
         self.declare_variable(identifier, value)?;
         Ok(())

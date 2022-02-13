@@ -127,7 +127,7 @@ impl ResolvedIdentifier {
 
 impl fmt::Display for ResolvedIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        f.write_str(&self.name())
+        f.write_str(self.name())
     }
 }
 
@@ -230,13 +230,13 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
         &mut self,
         position: &Position,
         expr: &BaseExpression<Identifier>,
-        name: &String,
+        name: &str,
     ) -> Self::Return;
     fn accept_set(
         &mut self,
         position: &Position,
         expr: &BaseExpression<Identifier>,
-        name: &String,
+        name: &str,
         value: &BaseExpression<Identifier>,
     ) -> Self::Return;
     fn accept_this(&mut self, position: &Position, this_identifier: &Identifier) -> Self::Return;
@@ -245,7 +245,7 @@ pub trait ExpressionVisitor<Identifier: fmt::Debug + fmt::Display + Clone> {
         position: &Position,
         this_identifier: &Identifier,
         super_identifier: &Identifier,
-        name: &String,
+        name: &str,
     ) -> Self::Return;
     fn accept_error_expression(&mut self, position: &Position) -> Self::Return;
 }
@@ -343,7 +343,7 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Id
         &mut self,
         _position: &Position,
         expr: &BaseExpression<Identifier>,
-        name: &String,
+        name: &str,
     ) -> Self::Return {
         write!(self.f, "{}.{}", expr, name)
     }
@@ -352,7 +352,7 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Id
         &mut self,
         _position: &Position,
         expr: &BaseExpression<Identifier>,
-        name: &String,
+        name: &str,
         value: &BaseExpression<Identifier>,
     ) -> Self::Return {
         write!(self.f, "{}.{} = {}", expr, name, value)
@@ -367,7 +367,7 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> ExpressionVisitor<Id
         _position: &Position,
         _this_identifier: &Identifier,
         _super_identifier: &Identifier,
-        name: &String,
+        name: &str,
     ) -> Self::Return {
         write!(self.f, "super.{}", name)
     }

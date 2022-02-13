@@ -61,7 +61,7 @@ impl Callable for Class {
                 .bind(instance.clone())
                 .call(interpreter, arguments)
                 .map(|_| instance.into()),
-            None if arguments.len() == 0 => Ok(instance.into()),
+            None if arguments.is_empty() => Ok(instance.into()),
             None => Err(LoxError::IncorrectArgumentCount),
         }
     }

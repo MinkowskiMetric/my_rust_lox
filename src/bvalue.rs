@@ -44,16 +44,22 @@ const NAN_BVALUE: BValue = unsafe { BValue::from_bits_unchecked(MASK_EXPONENT) }
 const NIL_BVALUE: BValue = unsafe { BValue::from_type_unchecked(BValueType::Nil, 0) };
 
 impl BValue {
+    /// # Safety
+    /// num must only contain valid sequences
     pub const unsafe fn from_bits_unchecked(num: u64) -> Self {
         Self(num)
     }
 
+    /// # Safety
+    /// num must only contain valid sequnces.
     pub const unsafe fn from_type_unchecked(t: BValueType, num: u64) -> Self {
         Self::from_bits_unchecked(MASK_EXPONENT | MASK_QUIET | t as u64 | num)
     }
 
+    /// # Safety
+    /// Must not be a nan value
     pub unsafe fn from_number_unchecked(num: f64) -> Self {
-        Self::from_bits_unchecked(core::mem::transmute(num))
+        Self::from_bits_unchecked(num.to_bits())
     }
 
     pub fn from_number(num: f64) -> Self {
@@ -84,8 +90,10 @@ impl BValue {
         self.value_type() == BValueType::Number
     }
 
+    /// # Safety
+    /// Caller must check the value is a number before calling this
     pub unsafe fn to_f64_unchecked(self) -> f64 {
-        core::mem::transmute(self.0)
+        f64::from_bits(self.0)
     }
 
     pub fn to_f64(self) -> Result<f64, LoxError> {

@@ -20,9 +20,10 @@ impl Instance {
     pub fn get(self: InstanceRef, name: &str) -> LoxResult<Value> {
         let member = self.properties.borrow().get(name).cloned();
 
-        let member = member.or_else(|| match self.class.lookup_method(name) {
-            Some(method) => Some(Value::from(method.bind(self.clone()))),
-            None => None,
+        let member = member.or_else(|| {
+            self.class
+                .lookup_method(name)
+                .map(|method| Value::from(method.bind(self.clone())))
         });
 
         member.ok_or_else(|| LoxError::UnknownVariable(name.to_string()))

@@ -305,9 +305,8 @@ impl<Iter: Iterator<Item = char>> Iterator for TokenReader<Iter> {
                 _ => None,
             };
 
-            match token {
-                Some(token) => break Some(token),
-                None => (),
+            if let Some(token) = token {
+                break Some(token);
             }
         }
     }

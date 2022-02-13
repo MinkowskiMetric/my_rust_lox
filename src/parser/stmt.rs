@@ -303,7 +303,7 @@ impl<'a, 'b, Identifier: fmt::Display + fmt::Debug + Clone> StatementVisitor<Ide
             None => writeln!(self.f, "class {} {{", class_definition.identifier()),
         }?;
 
-        for (_, method) in class_definition.methods() {
+        for method in class_definition.methods().values() {
             write!(self.f, "{} (", method.identifier())?;
             for parameter in method.parameters() {
                 write!(self.f, "{}, ", parameter)?;

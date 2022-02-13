@@ -29,8 +29,7 @@ pub trait CollectedErrors: Sized + Iterator {
             Some(errors) => {
                 if errors
                     .iter()
-                    .find(|err| matches!(err, LoxError::UnexpectedEndOfFile(..)))
-                    .is_some()
+                    .any(|err| matches!(err, LoxError::UnexpectedEndOfFile(..)))
                 {
                     CompilerResult::Partial(errors)
                 } else {

@@ -43,21 +43,16 @@ impl Resolver {
     fn declare(&mut self, pos: &Position, name: &str) -> LoxResult<()> {
         self.check_duplicate(pos, name)?;
 
-        Ok(match self.scopes.last_mut() {
-            Some(scope) => {
-                scope.insert(name.to_string(), (pos.clone(), false));
-            }
-            None => (),
-        })
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name.to_string(), (pos.clone(), false));
+        }
+
+        Ok(())
     }
 
     fn define(&mut self, name: &str) {
-        match self.scopes.last_mut() {
-            Some(scope) => {
-                scope.get_mut(name).expect("Should declare before define").1 = true;
-            }
-
-            None => (),
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.get_mut(name).expect("Should declare before define").1 = true;
         }
     }
 
@@ -232,12 +227,7 @@ impl ExpressionVisitor<String> for Resolver {
         ))
     }
 
-    fn accept_get(
-        &mut self,
-        position: &Position,
-        expr: &Expression,
-        name: &String,
-    ) -> Self::Return {
+    fn accept_get(&mut self, position: &Position, expr: &Expression, name: &str) -> Self::Return {
         let expr = self.accept_expression(expr)?;
 
         Ok(ResolvedExpression::Get(
@@ -251,7 +241,7 @@ impl ExpressionVisitor<String> for Resolver {
         &mut self,
         position: &Position,
         expr: &Expression,
-        name: &String,
+        name: &str,
         value: &Expression,
     ) -> Self::Return {
         let expr = self.accept_expression(expr)?;
@@ -277,7 +267,7 @@ impl ExpressionVisitor<String> for Resolver {
         position: &Position,
         this_identifier: &String,
         super_identifier: &String,
-        name: &String,
+        name: &str,
     ) -> Self::Return {
         assert_eq!(this_identifier, "this");
         assert_eq!(super_identifier, "super");
@@ -369,33 +359,29 @@ impl StatementVisitor<String> for Resolver {
         self.declare(position, "this")?;
         self.define("this");
 
-        let ret = (|| {
-            let methods = class_definition
-                .methods()
-                .iter()
-                .map(|(name, method)| {
-                    self.resolve_function(position, method)
-                        .map(|method| (name.clone(), method))
-                })
-                .collect::<LoxResult<HashMap<_, _>>>()?;
+        let methods = class_definition
+            .methods()
+            .iter()
+            .map(|(name, method)| {
+                self.resolve_function(position, method)
+                    .map(|method| (name.clone(), method))
+            })
+            .collect::<LoxResult<HashMap<_, _>>>()?;
 
+        self.end_scope();
+
+        if superclass_name.is_some() {
             self.end_scope();
+        }
 
-            if superclass_name.is_some() {
-                self.end_scope();
-            }
-
-            Ok(ResolvedStatement::ClassDeclaration(
-                position.clone(),
-                ResolvedClassDefinition::new(
-                    class_definition.identifier().to_string(),
-                    superclass_name,
-                    methods,
-                ),
-            ))
-        })();
-
-        ret
+        Ok(ResolvedStatement::ClassDeclaration(
+            position.clone(),
+            ResolvedClassDefinition::new(
+                class_definition.identifier().to_string(),
+                superclass_name,
+                methods,
+            ),
+        ))
     }
 
     fn accept_block(&mut self, position: &Position, statements: &[Statement]) -> Self::Return {
@@ -517,7 +503,7 @@ pub fn resolve<'a>(
 
 pub fn resolve_statement(statement: &Statement) -> LoxResult<ResolvedStatement> {
     let mut resolver = Resolver::new();
-    resolver.accept_statement(&statement)
+    resolver.accept_statement(statement)
 }
 
 pub trait Resolvable {

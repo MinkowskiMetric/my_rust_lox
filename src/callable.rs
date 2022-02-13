@@ -104,7 +104,7 @@ impl Callable for ScriptCallable {
                 frame.declare_variable(&parameters[i], arguments[i].clone())?;
             }
 
-            let ret = frame.call_function(&self.func_definition.body())?;
+            let ret = frame.call_function(self.func_definition.body())?;
 
             Ok(if self.func_type() == FuncType::Initializer {
                 self.env
